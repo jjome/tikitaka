@@ -42,8 +42,9 @@ test('always-on recognition interrupts TTS, commits final speech, and releases m
   globalThis.SpeechSynthesisUtterance = class { constructor(text) { this.text = text; } };
   globalThis.AudioContext = class {
     async resume() {} async close() {}
-    createAnalyser() { return { fftSize: 512, getFloatTimeDomainData(values) { values.fill(0); } }; }
-    createMediaStreamSource() { return { connect() {} }; }
+    createAnalyser() { return { fftSize: 512, getFloatTimeDomainData(values) { values.fill(0); }, connect() {}, disconnect() {} }; }
+    createMediaStreamSource() { return { connect() {}, disconnect() {} }; }
+    createGain() { return { gain: { value: 1 }, connect() {}, disconnect() {} }; }
   };
   globalThis.requestAnimationFrame = () => 1;
   globalThis.cancelAnimationFrame = () => {};

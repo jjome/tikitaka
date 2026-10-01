@@ -81,12 +81,25 @@ export class PlaybackGuard {
 
 /** Fast local energy gate. This detects activity, not semantic speech. */
 export class ActivityGate {
-  constructor({ threshold = .035, onsetMs = 120, offsetMs = 180, onStart, onEnd }) {
-    Object.assign(this, { threshold, onsetMs, offsetMs, onStart, onEnd });
+  constructor({ threshold = .035, onsetMs = 120, offsetMs = 180, adaptive = false, onStart, onEnd }) {
+    Object.assign(this, { threshold, minimumThreshold: threshold, onsetMs, offsetMs, adaptive, onStart, onEnd });
     this.reset();
   }
-  reset() { this.active = false; this.aboveSince = null; this.lastAbove = null; }
+  reset() {
+    this.active = false; this.aboveSince = null; this.lastAbove = null;
+    this.threshold = this.minimumThreshold; this.samples = []; this.startedAt = null;
+  }
   process(rms, now) {
+    if (this.adaptive && !this.active) {
+      if (this.startedAt === null) this.startedAt = now;
+      this.samples.push({ rms, at: now });
+      this.samples = this.samples.filter(sample => now - sample.at < 2000);
+      const levels = this.samples.map(sample => sample.rms).sort((a, b) => a - b);
+      const floor = levels[Math.floor((levels.length - 1) * .2)];
+      this.threshold = Math.max(this.minimumThreshold, floor * 3);
+      // Estimate ambient input automatically; do not require a calibration screen.
+      if (now - this.startedAt < 200) return false;
+    }
     if (rms >= this.threshold) {
       this.lastAbove = now;
       if (this.aboveSince === null) this.aboveSince = now;

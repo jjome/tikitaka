@@ -9,7 +9,8 @@ export class BrowserVoice {
     this.userSpeaking = false;
     this.cycle = 0;
     this.lastActivitySignal = 0;
-    this.gate = new ActivityGate({ onStart: () => this.beginSpeech(), onEnd: () => this.buffer.speechEnded() });
+    this.gate = new ActivityGate({ threshold: .006, adaptive: true,
+      onStart: () => this.beginSpeech(), onEnd: () => this.buffer.speechEnded() });
     this.buffer = new TranscriptBuffer({
       onCommit: text => { this.userSpeaking = false; this.onText(text); },
       onPreview,
@@ -41,12 +42,26 @@ export class BrowserVoice {
       if (!stream) return;
       if (generation !== this.generation) { stream.getTracks().forEach(t => t.stop()); return; }
       this.stream = stream;
+      this.inputTrack = stream.getAudioTracks?.()[0];
+      if (this.inputTrack) {
+        this.inputTrack.onended = () => {
+          if (generation !== this.generation) return;
+          this.stop(); this.onError('마이크 연결이 끊겼습니다. 입력 장치를 확인하고 다시 시작해주세요.');
+        };
+      }
       this.context = new AudioContext();
       await Promise.race([this.context.resume(), cancelled]);
       if (generation !== this.generation) return;
       this.analyser = this.context.createAnalyser();
       this.analyser.fftSize = 512;
-      this.context.createMediaStreamSource(stream).connect(this.analyser);
+      this.source = this.context.createMediaStreamSource(stream);
+      this.source.connect(this.analyser);
+      // Retain every node and keep the capture graph rendering without mic loopback.
+      this.silentSink = this.context.createGain();
+      this.silentSink.gain.value = 0;
+      this.analyser.connect(this.silentSink);
+      this.silentSink.connect(this.context.destination);
+      this.levelSamples = new Float32Array(this.analyser.fftSize);
       this.running = true;
       this.readLevel();
       const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -107,12 +122,12 @@ export class BrowserVoice {
         }
         this.restartTimer = setTimeout(() => {
           if (!this.running || generation !== this.generation) return;
-          try { this.recognition.start(); }
+          try { this.startRecognition(); }
           catch { this.stop(); this.onError('음성 인식을 다시 시작하지 못했습니다. 재개해주세요.'); }
         }, 250);
       };
       try {
-        this.recognition.start();
+        this.startRecognition();
         await recognitionReady;
       } finally {
         clearTimeout(readyTimer);
@@ -126,29 +141,40 @@ export class BrowserVoice {
     }
   }
   beginSpeech() {
-    if (!this.userSpeaking) {
+    const wasPlaying = Boolean(this.player.current);
+    this.player.cancel(); // Stop locally before any callback or server round trip.
+    if (!this.userSpeaking || wasPlaying) {
       this.userSpeaking = true;
-      this.player.cancel(); // Local cancellation never waits for the server round trip.
       this.onStart();
     }
   }
+  startRecognition() {
+    if (this.inputTrack?.kind === 'audio' && this.inputTrack.readyState === 'live') {
+      // Current Chrome accepts an explicit track. Older engines may ignore it.
+      try { this.recognition.start(this.inputTrack); return; }
+      catch (error) { if (!(error instanceof TypeError)) throw error; }
+    }
+    this.recognition.start();
+  }
   readLevel() {
     if (!this.running) return;
-    const values = new Float32Array(this.analyser.fftSize);
+    const values = this.levelSamples;
     this.analyser.getFloatTimeDomainData(values);
     const rms = Math.sqrt(values.reduce((sum, value) => sum + value * value, 0) / values.length);
-    this.onLevel(Math.min(1, rms * 12));
+    this.onLevel(Math.min(1, rms / Math.max(.018, this.gate.threshold * 3)));
     const now = performance.now();
     if (this.gate.process(rms, now)) {
+      if (!this.userSpeaking || this.player.current) this.beginSpeech();
       this.buffer.activity();
       if (now - this.lastActivitySignal >= 500) {
         this.lastActivitySignal = now;
         this.onActivity();
       }
     }
-    this.frame = requestAnimationFrame(() => this.readLevel());
+    this.levelTimer = setTimeout(() => this.readLevel(), 20);
   }
   play(message, onFinish, onError) {
+    if (!this.running || this.userSpeaking) return;
     const voices = window.speechSynthesis.getVoices().filter(v => v.lang.toLowerCase().startsWith(this.language));
     this.player.play(message, { language: this.language,
       voice: voices[message.speaker === 'a' ? 0 : 1] || voices[0], onFinish, onError });
@@ -163,7 +189,7 @@ export class BrowserVoice {
     this.userSpeaking = false;
     this.gate.reset();
     clearTimeout(this.restartTimer);
-    cancelAnimationFrame(this.frame);
+    clearTimeout(this.levelTimer);
     if (this.recognition) {
       this.recognition.onend = null;
       this.recognition.abort();
@@ -171,6 +197,11 @@ export class BrowserVoice {
     this.recognition = null;
     this.buffer.reset();
     this.player?.cancel();
+    if (this.inputTrack) this.inputTrack.onended = null;
+    this.inputTrack = null;
+    this.source?.disconnect(); this.source = null;
+    this.analyser?.disconnect(); this.analyser = null;
+    this.silentSink?.disconnect(); this.silentSink = null;
     this.stream?.getTracks().forEach(track => track.stop());
     this.stream = null;
     this.context?.close().catch(() => {});

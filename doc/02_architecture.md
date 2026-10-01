@@ -99,7 +99,9 @@ Gateway 입력은 해당 Persona, Topic, 언어, 최근 확정 기록, 목적, �
 - SpeechRecognition의 중간 전사는 화면에만 표시하며, 최종 전사와 발화 종료 조건이 충족돼야 전송한다.
 - 재생 시작·종료·오류를 서버에 알린다. 취소 시 이전 재생 콜백을 토큰으로 무효화한다.
 - PC에서는 getUserMedia 입력의 에너지 활동이 120ms 지속되면 음성을 로컬에서 취소한다. SpeechRecognition의 `speechstart`와 새 중간 전사도 보조 신호로 사용한다. 에너지 감지는 말소리와 소음을 의미적으로 구분하지 못한다.
-- 브라우저 STT가 사용하는 캡처와 getUserMedia 활동 감지 캡처는 같다고 가정하지 않는다. 활동 감지 경로에서 요청한 에코 제거가 STT에도 적용된다고 표시하지 않는다.
+- 마이크 Source·Analyser·0 Gain 노드를 명시적으로 유지하고 무음 출력 경로까지 연결한다. 입력 감지는 화면 렌더링과 별개로 20ms 간격으로 읽는다. 마이크 소리가 스피커로 재생되지 않도록 출력 Gain은 0이다.
+- 시작 후 200ms 동안 주변 입력을 자동 보정하고 최근 2초의 낮은 입력 구간을 기준으로 감도를 조정한다. 최소 RMS 기준은 0.006으로, 기존 고정 0.035보다 작은 입력도 감지한다. 음성이나 소음의 의미를 구분하는 VAD는 아니다.
+- `SpeechRecognition.start(audioTrack)`에 getUserMedia의 같은 트랙을 전달한다. 지원하는 Chrome에서는 STT와 활동 감지가 같은 입력을 사용한다. 미지원 엔진은 인자를 무시하거나 기존 마이크 경로로 대체할 수 있으므로 모든 브라우저에서 같은 캡처를 보장하지 않는다.
 - 스피커 에코, 소음, 짧은 머뭇거림은 Android 실제 오디오 경로에서 다시 검증한다. 초기 PC 음성 검증은 이어폰 사용을 권장한다.
 
 ## 로컬 운영 범위
@@ -111,5 +113,6 @@ Gateway 입력은 해당 Persona, Topic, 언어, 최근 확정 기록, 목적, �
 - [FastAPI WebSocket](https://fastapi.tiangolo.com/advanced/websockets/)
 - [MDN SpeechRecognition](https://developer.mozilla.org/en-US/docs/Web/API/SpeechRecognition): 브라우저 지원과 서버 기반 인식의 한계.
 - [MDN getUserMedia](https://developer.mozilla.org/en-US/docs/Web/API/MediaDevices/getUserMedia): 권한과 localhost 보안 컨텍스트.
+- [MDN SpeechRecognition.start](https://developer.mozilla.org/en-US/docs/Web/API/SpeechRecognition/start): 오디오 트랙을 명시하는 인식 시작 계약.
 - [OpenAI Responses API](https://developers.openai.com/api/reference/typescript/resources/beta/subresources/responses/methods/create): 선택적 실제 LLM 어댑터 계약.
 

@@ -13,22 +13,25 @@ async function fixture(createSession, { waitForRecognition = false } = {}) {
       classList: { toggle() {} }, addEventListener(type, handler) { this[type] = handler; } });
     return nodes.get(id);
   }
-  const records = [], voices = [], recognitions = [], storage = new Map(), page = {};
+  const records = [], voices = [], recognitions = [], sinks = [], storage = new Map(), page = {};
   let streamsStopped = 0;
+  let microphoneLevel = 0, cancelled = 0;
+  const track = { kind: 'audio', readyState: 'live', stop() { streamsStopped++; } };
   const globals = {
     document: { getElementById: node, addEventListener() {} },
     window: { SpeechRecognition: class {
       constructor() { recognitions.push(this); }
-      start() { if (!waitForRecognition) this.onstart?.(); } abort() {}
+      start(input) { this.input = input; if (!waitForRecognition) this.onstart?.(); } abort() {}
     },
-      speechSynthesis: { cancel() {}, getVoices: () => [], speak(u) { voices.push(u); } },
+      speechSynthesis: { cancel() { cancelled++; }, getVoices: () => [], speak(u) { voices.push(u); } },
       addEventListener(type, handler) { page[type] = handler; } },
-    navigator: { mediaDevices: { async getUserMedia() { return { getTracks: () => [{ stop() { streamsStopped++; } }] }; } } },
+    navigator: { mediaDevices: { async getUserMedia() { return { getTracks: () => [track], getAudioTracks: () => [track] }; } } },
     location: { protocol: 'http:', host: 'localhost' },
     sessionStorage: { getItem: key => storage.get(key) || null, setItem: (k, v) => storage.set(k, v), removeItem: k => storage.delete(k) },
     AudioContext: class { async resume() {} async close() {}
-      createAnalyser() { return { fftSize: 512, getFloatTimeDomainData(v) { v.fill(0); } }; }
-      createMediaStreamSource() { return { connect() {} }; } },
+      createAnalyser() { return { fftSize: 512, getFloatTimeDomainData(v) { v.fill(microphoneLevel); }, connect() {}, disconnect() {} }; }
+      createMediaStreamSource() { return { connect() {}, disconnect() {} }; }
+      createGain() { const sink = { gain: { value: 1 }, connect() {}, disconnect() {} }; sinks.push(sink); return sink; } },
     SpeechSynthesisUtterance: class { constructor(text) { this.text = text; } },
     requestAnimationFrame: () => 1, cancelAnimationFrame() {},
     fetch: async (url, options) => url === '/api/config'
@@ -53,7 +56,8 @@ async function fixture(createSession, { waitForRecognition = false } = {}) {
   for (const [key, value] of Object.entries(globals)) Object.defineProperty(globalThis, key, { configurable: true, writable: true, value });
   await import(`../apps/pc/simple.mjs?fixture=${++fixtureId}`);
   await tick();
-  return { node, records, voices, recognitions, stopped: () => streamsStopped,
+  return { node, records, voices, recognitions, sinks, track, stopped: () => streamsStopped,
+    audioLevel: value => { microphoneLevel = value; }, cancelled: () => cancelled,
     async cleanup() {
       if (node('talk').dataset.active === 'true') node('talk').click();
       page.pagehide?.(); await tick();
@@ -142,5 +146,23 @@ test('cancel while recognition connects cannot start AI on a late ready event', 
     assert.equal(f.voices.length, 0);
     assert.equal(f.stopped(), 1);
     assert.equal(f.node('talk').textContent, '대화 시작');
+  } finally { await f.cleanup(); }
+});
+
+test('quiet microphone audio alone stops AI immediately without waiting for STT or server', async () => {
+  const f = await fixture(sessionResponse);
+  try {
+    f.node('talk').click(); await tick(); await tick();
+    assert.equal(f.recognitions[0].input, f.track);
+    assert.equal(f.sinks[0].gain.value, 0); // Never play the user's microphone back through speakers.
+    await new Promise(resolve => setTimeout(resolve, 250)); // Silent ambient estimation.
+    const before = f.cancelled();
+    f.audioLevel(.012); // Below the previous fixed .035 threshold.
+    await new Promise(resolve => setTimeout(resolve, 180));
+    assert.ok(f.cancelled() > before);
+    assert.equal(f.records.filter(r => r.type === 'speech_started').length, 1);
+    assert.equal(f.node('status').textContent, '당신의 이야기를 듣고 있어요');
+    f.voices[0].onend(); // An interrupted browser utterance must not advance AI.
+    assert.equal(f.records.filter(r => r.type === 'playback_finished').length, 0);
   } finally { await f.cleanup(); }
 });

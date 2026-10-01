@@ -42,7 +42,7 @@ function stop(command = 'end') {
 }
 
 const voice = new BrowserVoice({
-  onStart: () => { if (active) { highlight(null); send({ type: 'speech_started' }); } },
+  onStart: () => { if (active) { state = 'listening'; render(); send({ type: 'speech_started' }); } },
   onActivity: () => { if (active) send({ type: 'speech_activity' }); },
   onText: text => {
     if (!active || !outbox) return;

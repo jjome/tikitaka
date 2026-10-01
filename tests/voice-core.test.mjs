@@ -99,3 +99,31 @@ test('activity detector resets its state when microphone stops', () => {
   assert.equal(starts, 2);
 });
 
+test('adaptive gate detects quiet speech after measuring a quiet room', () => {
+  let starts = 0;
+  const gate = new ActivityGate({ threshold: .006, adaptive: true, onStart: () => starts++, onEnd() {} });
+  for (let t = 0; t <= 300; t += 20) gate.process(.001, t);
+  for (let t = 320; t <= 460; t += 20) gate.process(.012, t);
+  assert.equal(starts, 1);
+});
+
+test('adaptive gate rejects sustained ambient noise but detects voice above it', () => {
+  let starts = 0;
+  const gate = new ActivityGate({ threshold: .006, adaptive: true, onStart: () => starts++, onEnd() {} });
+  for (let t = 0; t <= 1000; t += 20) gate.process(.009, t);
+  assert.equal(starts, 0);
+  for (let t = 1020; t <= 1180; t += 20) gate.process(.06, t);
+  assert.equal(starts, 1);
+});
+
+test('adaptive gate still rejects a brief transient and resets calibration per session', () => {
+  let starts = 0;
+  const gate = new ActivityGate({ threshold: .006, adaptive: true, onStart: () => starts++, onEnd() {} });
+  for (let t = 0; t <= 300; t += 20) gate.process(.001, t);
+  gate.process(.02, 320); gate.process(.02, 350); gate.process(.001, 380);
+  assert.equal(starts, 0);
+  gate.reset();
+  assert.equal(gate.threshold, .006);
+  assert.equal(gate.samples.length, 0);
+});
+
