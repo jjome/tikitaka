@@ -112,7 +112,7 @@ test('microphone chosen in the check page is used by conversation; diagnostics o
     assert.equal(report.source, 'Test microphone');
     assert.equal(report.enabled, true);
     assert.equal(report.muted, false);
-    assert.match(report.build, /finalize/);
+    assert.match(report.build, /endpoint/);
     for (const key of ['audio', 'deviceId', 'text', 'token']) assert.equal(key in report, false);
   } finally { await f.cleanup(); }
 });
@@ -138,27 +138,28 @@ test('stable interim text can finish even if the recognizer never emits speechen
     f.node('talk').click(); await tick(); await tick();
     await new Promise(resolve => setTimeout(resolve, 250));
     f.audioLevel(.012); // Steady residual input must not keep the final text waiting forever.
-    const recognizer = f.recognitions[0]; recognizer.finalText = '나는 반대야';
-    const interim = [{ transcript: recognizer.finalText }]; interim.isFinal = false;
+    const recognizer = f.recognitions[0]; // No final result even when stop() is requested.
+    const interim = [{ transcript: '나는 반대야' }]; interim.isFinal = false;
     recognizer.onresult({ results: [interim] });
     await new Promise(resolve => setTimeout(resolve, 3900));
     assert.equal(recognizer.stopCalls, 1);
     assert.equal(f.records.filter(r => r.type === 'user_message').length, 1);
+    assert.equal(f.records.find(r => r.type === 'user_message').text, '나는 반대야');
   } finally { await f.cleanup(); }
 });
 
-test('recognition ending without a final transcript stops cleanly instead of sending interim text', async () => {
+test('recognition ending without isFinal sends the last text once and keeps the conversation active', async () => {
   const f = await fixture(sessionResponse);
   try {
     f.node('talk').click(); await tick(); await tick();
     const recognizer = f.recognitions[0];
-    const interim = [{ transcript: '아직 확정 안 됨' }]; interim.isFinal = false;
+    const interim = [{ transcript: '안녕 내 말이 들려 들려' }]; interim.isFinal = false;
     recognizer.onresult({ results: [interim] }); recognizer.onspeechend();
     await new Promise(resolve => setTimeout(resolve, 1400));
     assert.equal(recognizer.stopCalls, 1);
-    assert.equal(f.records.filter(r => r.type === 'user_message').length, 0);
-    assert.equal(f.node('talk').textContent, '대화 시작');
-    assert.match(f.node('error').textContent, /확정하지 못했습니다/);
-    assert.equal(f.stopped(), 1);
+    assert.deepEqual(f.records.filter(r => r.type === 'user_message').map(r => r.text), ['안녕 내 말이 들려 들려']);
+    assert.equal(f.node('talk').textContent, '대화 끝내기');
+    assert.equal(f.node('error').hidden, true);
+    assert.equal(f.stopped(), 0);
   } finally { await f.cleanup(); }
 });

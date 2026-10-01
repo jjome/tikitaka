@@ -18,7 +18,7 @@ export async function fixture(createSession, { waitForRecognition = false, micro
     document: { getElementById: node, addEventListener() {} },
     window: { SpeechRecognition: class {
       constructor() { recognitions.push(this); }
-      start(input) { this.input = input; if (!waitForRecognition) this.onstart?.(); } abort() {}
+      start(input) { this.input = input; this.startCalls = (this.startCalls || 0) + 1; if (!waitForRecognition) this.onstart?.(); } abort() {}
       stop() {
         this.stopCalls = (this.stopCalls || 0) + 1;
         queueMicrotask(() => {

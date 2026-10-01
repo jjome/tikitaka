@@ -62,7 +62,10 @@ Python `unittest`로 상태 머신, 취소, 저장, HTTP/WebSocket과 Provider �
 
 ```powershell
 node tests/live-conversation.mjs
+node tests/live-conversation.mjs --interim-only
 ```
+
+`--interim-only`는 브라우저가 최종 전사를 반환하지 않는 조건에서 사용자 발화 두 번과 AI 응답이 이어지는지 검사한다. 이 경우 앱은 발화 종료 후 마지막 인식 문장을 채택한다. 브라우저의 최종 전사보다 정확도가 낮을 수 있으나 시작 버튼을 다시 누르지 않고 대화를 계속한다.
 
 ## 폴더 구조
 

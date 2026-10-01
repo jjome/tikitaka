@@ -98,8 +98,8 @@ Gateway 입력은 해당 Persona, Topic, 언어, 최근 확정 기록, 목적, �
 
 ## 음성 어댑터
 
-- SpeechRecognition의 중간 전사는 화면에만 표시하며, 최종 전사와 발화 종료 조건이 충족돼야 전송한다.
-- 중간 전사만 남으면 발화 종료 후 1.2초, 또는 전사가 2.5초 동안 변하지 않을 때 `recognition.stop()`으로 최종 결과를 요청한다. 최종 결과를 받은 뒤 1.2초 발화 모으기를 거쳐 한 번 전송하고 인식을 재시작한다. 종료 시 입력 감도를 다시 보정해 지속된 잔여 입력이 전송을 막지 않게 한다. 최종 결과 없이 끝나거나 확정 요청이 4.5초 동안 응답하지 않으면 안내 후 정지하며 중간 전사를 임의로 확정하지 않는다.
+- SpeechRecognition의 중간 전사는 입력 도중 화면에 표시한다. 서버에는 브라우저의 최종 전사 또는 앱이 발화 종료 시 채택한 전사를 한 번 전송한다.
+- 중간 전사만 남으면 발화 종료 후 1.2초, 또는 전사가 2.5초 동안 변하지 않을 때 `recognition.stop()`으로 최종 결과를 요청한다. 최종 결과를 받은 뒤 1.2초 발화 모으기를 거쳐 한 번 전송하고 인식을 재시작한다. 최종 결과 없이 인식이 종료되면 마지막 인식 문장을 앱의 발화 종료 결과로 채택한다. 브라우저의 `isFinal`을 바꾸지 않으며 이 경로는 인식기의 최종 전사보다 정확도가 낮을 수 있다. 종료 시 입력 감도를 다시 보정해 지속된 잔여 입력이 전송을 막지 않게 한다. 확정 요청이 4.5초 동안 종료되지 않으면 안내 후 정지한다.
 - 재생 시작·종료·오류를 서버에 알린다. 취소 시 이전 재생 콜백을 토큰으로 무효화한다.
 - PC에서는 getUserMedia 입력의 에너지 활동이 120ms 지속되면 음성을 로컬에서 취소한다. SpeechRecognition의 `speechstart`와 새 중간 전사도 보조 신호로 사용한다. 에너지 감지는 말소리와 소음을 의미적으로 구분하지 못한다.
 - 마이크 Source·Analyser·0 Gain 노드를 명시적으로 유지하고 무음 출력 경로까지 연결한다. 입력 감지는 화면 렌더링과 별개로 20ms 간격으로 읽는다. 마이크 소리가 스피커로 재생되지 않도록 출력 Gain은 0이다.
@@ -119,5 +119,6 @@ Gateway 입력은 해당 Persona, Topic, 언어, 최근 확정 기록, 목적, �
 - [MDN SpeechRecognition](https://developer.mozilla.org/en-US/docs/Web/API/SpeechRecognition): 브라우저 지원과 서버 기반 인식의 한계.
 - [MDN getUserMedia](https://developer.mozilla.org/en-US/docs/Web/API/MediaDevices/getUserMedia): 권한과 localhost 보안 컨텍스트.
 - [MDN SpeechRecognition.start](https://developer.mozilla.org/en-US/docs/Web/API/SpeechRecognition/start): 오디오 트랙을 명시하는 인식 시작 계약.
+- [MDN SpeechRecognition.stop](https://developer.mozilla.org/en-US/docs/Web/API/SpeechRecognition/stop): 인식을 멈추고 현재까지의 결과 반환을 시도하는 동작. 결과 수신을 보장하는 것으로 취급하지 않는다.
 - [OpenAI Responses API](https://developers.openai.com/api/reference/typescript/resources/beta/subresources/responses/methods/create): 선택적 실제 LLM 어댑터 계약.
 

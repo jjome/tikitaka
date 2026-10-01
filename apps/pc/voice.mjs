@@ -1,6 +1,6 @@
-import { TranscriptBuffer, PlaybackGuard, ActivityGate } from './voice-core.mjs?v=20261002-final1';
+import { TranscriptBuffer, PlaybackGuard, ActivityGate } from './voice-core.mjs?v=20261002-endpoint2';
 
-export const VOICE_BUILD = '2026-10-02-finalize-1';
+export const VOICE_BUILD = '2026-10-02-endpoint-2';
 export function preferredMicrophone() {
   try { return window.localStorage?.getItem('tikitaka_microphone') || ''; } catch { return ''; }
 }
@@ -137,18 +137,21 @@ export class BrowserVoice {
         if (!alive()) return;
         this.recognitionListening = false;
         clearTimeout(this.finalizeTimer);
-        if (this.finalizingRecognition && this.buffer.hasInterim) {
-          this.stop();
-          this.onError('말한 내용을 확정하지 못했습니다. 대화를 다시 시작해주세요.');
-          return;
+        if (this.finalizingRecognition) {
+          this.gate.reset();
+          if (this.buffer.hasInterim) {
+            // stop() can end without a final result. The app owns this turn boundary;
+            // keep the last recognized text rather than requiring another start tap.
+            this.buffer.commitAtEndpoint();
+          }
         }
-        if (this.finalizingRecognition) this.gate.reset();
         if (this.userSpeaking) this.buffer.speechEnded();
         if (!ready) {
           clearTimeout(readyTimer);
           rejectReady(new Error('음성 인식을 시작하지 못했습니다. 별도 Google Chrome 창에서 열어주세요.'));
           return;
         }
+        if (!alive()) return; // onText may have ended or paused the session.
         this.restartTimer = setTimeout(() => {
           if (!this.running || generation !== this.generation) return;
           try { this.startRecognition(); }

@@ -1,5 +1,5 @@
 // Internal diagnostics, intentionally separate from the one-button product screen.
-import { BrowserVoice } from './voice.mjs?v=20261002-final1';
+import { BrowserVoice } from './voice.mjs?v=20261002-endpoint2';
 import { MessageOutbox } from './outbox.mjs';
 
 const $ = id => document.getElementById(id);

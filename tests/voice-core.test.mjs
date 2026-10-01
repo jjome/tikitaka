@@ -30,6 +30,17 @@ test('final chunks are merged into one utterance', () => {
   h.tick();
   assert.deepEqual(h.committed, ['나는 짜장 그게 더 좋아']);
 });
+
+test('explicit app endpoint uses the latest provisional text without changing final flags or sending twice', () => {
+  const h = bufferHarness();
+  const first = { key: '1:0', text: '안녕', final: false };
+  const updated = { key: '1:0', text: '안녕 내 말이 들려', final: false };
+  h.buffer.feed([first]); h.buffer.feed([updated]);
+  h.buffer.commitAtEndpoint();
+  h.buffer.feed([updated]); h.tick();
+  assert.deepEqual(h.committed, ['안녕 내 말이 들려']);
+  assert.equal(updated.final, false);
+});
 test('repeated browser result does not create a duplicate message', () => {
   const h = bufferHarness();
   const item = { key: '1:0', text: '안녕', final: true };

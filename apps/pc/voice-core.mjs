@@ -27,15 +27,20 @@ export class TranscriptBuffer {
     this.activity();
     this.timer = this.schedule(() => {
       this.timer = null;
-      const items = [...this.items.values()];
-      if (this.hasInterim) { this.onNeedsFinal(); return; } // Ask the adapter to finalize; never guess a final transcript.
-      if (!items.length) { this.onEmpty(); return; }
-      const text = items.map(item => item.text.trim()).join(' ');
-      for (const item of items) this.consumed.add(item.key);
-      this.items.clear();
-      this.onPreview('');
-      this.onCommit(text);
+      if (this.hasInterim) { this.onNeedsFinal(); return; }
+      this.commitAtEndpoint();
     }, this.silenceMs);
+  }
+  // Explicit app endpoint after the recognizer has ended. This does not change isFinal.
+  commitAtEndpoint() {
+    this.activity();
+    const items = [...this.items.values()];
+    if (!items.length) { this.onEmpty(); return; }
+    const text = items.map(item => item.text.trim()).join(' ');
+    for (const item of items) this.consumed.add(item.key);
+    this.items.clear();
+    this.onPreview('');
+    this.onCommit(text);
   }
   reset() {
     this.activity();
