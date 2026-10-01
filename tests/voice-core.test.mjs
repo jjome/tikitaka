@@ -4,13 +4,14 @@ import { TranscriptBuffer, PlaybackGuard, ActivityGate } from '../apps/pc/voice-
 
 function bufferHarness() {
   let timer = null;
-  const committed = [], previews = [], empty = [];
+  const committed = [], previews = [], empty = [], finalRequests = [];
   const buffer = new TranscriptBuffer({
     onCommit: text => committed.push(text), onPreview: text => previews.push(text), onEmpty: () => empty.push(true),
+    onNeedsFinal: () => finalRequests.push(true),
     schedule: callback => { timer = callback; return 1; }, unschedule: () => { timer = null; },
   });
   const tick = () => { const callback = timer; timer = null; callback?.(); };
-  return { buffer, committed, previews, empty, tick };
+  return { buffer, committed, previews, empty, finalRequests, tick };
 }
 
 test('interim transcript is never committed even after speech end', () => {
@@ -19,6 +20,7 @@ test('interim transcript is never committed even after speech end', () => {
   h.buffer.speechEnded(); h.tick();
   assert.deepEqual(h.committed, []);
   assert.equal(h.previews.at(-1), '나는');
+  assert.deepEqual(h.finalRequests, [true]);
 });
 test('final chunks are merged into one utterance', () => {
   const h = bufferHarness();

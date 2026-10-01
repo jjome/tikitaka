@@ -1,6 +1,6 @@
-import { TranscriptBuffer, PlaybackGuard, ActivityGate } from './voice-core.mjs?v=20261002-mic1';
+import { TranscriptBuffer, PlaybackGuard, ActivityGate } from './voice-core.mjs?v=20261002-final1';
 
-export const VOICE_BUILD = '2026-10-02-mic-diagnostics-1';
+export const VOICE_BUILD = '2026-10-02-finalize-1';
 export function preferredMicrophone() {
   try { return window.localStorage?.getItem('tikitaka_microphone') || ''; } catch { return ''; }
 }
@@ -17,9 +17,10 @@ export class BrowserVoice {
     this.gate = new ActivityGate({ threshold: .006, adaptive: true,
       onStart: () => this.beginSpeech(), onEnd: () => this.buffer.speechEnded() });
     this.buffer = new TranscriptBuffer({
-      onCommit: text => { this.userSpeaking = false; this.onText(text); },
+      onCommit: text => { this.userSpeaking = false; this.gate.reset(); this.onText(text); },
       onPreview,
-      onEmpty: () => { this.userSpeaking = false; this.onEmpty(); },
+      onNeedsFinal: () => this.finalizeRecognition(),
+      onEmpty: () => { this.userSpeaking = false; this.gate.reset(); this.onEmpty(); },
     });
     this.player = window.speechSynthesis
       ? new PlaybackGuard(window.speechSynthesis, text => new SpeechSynthesisUtterance(text)) : null;
@@ -87,6 +88,7 @@ export class BrowserVoice {
       this.recognition.onstart = () => {
         if (!alive()) return;
         ready = true; clearTimeout(readyTimer);
+        this.recognitionListening = true; this.finalizingRecognition = false;
         this.cycle += 1; this.onStatus('마이크 켜짐'); resolveReady(true);
       };
       this.recognition.onspeechstart = () => {
@@ -110,6 +112,12 @@ export class BrowserVoice {
         this.beginSpeech();
         this.onActivity();
         this.buffer.feed(items);
+        const signature = JSON.stringify(items);
+        if (signature !== this.lastResultSignature) {
+          this.lastResultSignature = signature;
+          clearTimeout(this.resultIdleTimer);
+          if (this.buffer.hasInterim) this.resultIdleTimer = setTimeout(() => this.finalizeRecognition(), 2500);
+        }
       };
       this.recognition.onerror = event => {
         if (!alive() || event.error === 'aborted' || event.error === 'no-speech') return;
@@ -127,6 +135,15 @@ export class BrowserVoice {
       };
       this.recognition.onend = () => {
         if (!alive()) return;
+        this.recognitionListening = false;
+        clearTimeout(this.finalizeTimer);
+        if (this.finalizingRecognition && this.buffer.hasInterim) {
+          this.stop();
+          this.onError('말한 내용을 확정하지 못했습니다. 대화를 다시 시작해주세요.');
+          return;
+        }
+        if (this.finalizingRecognition) this.gate.reset();
+        if (this.userSpeaking) this.buffer.speechEnded();
         if (!ready) {
           clearTimeout(readyTimer);
           rejectReady(new Error('음성 인식을 시작하지 못했습니다. 별도 Google Chrome 창에서 열어주세요.'));
@@ -170,6 +187,18 @@ export class BrowserVoice {
     }
     this.recognition.start();
   }
+  finalizeRecognition() {
+    if (!this.running || !this.recognitionListening || this.finalizingRecognition) return;
+    this.finalizingRecognition = true;
+    clearTimeout(this.resultIdleTimer);
+    this.finalizeTimer = setTimeout(() => {
+      if (!this.running || !this.finalizingRecognition) return;
+      this.stop(); this.onError('말한 내용을 확정하지 못했습니다. 대화를 다시 시작해주세요.');
+    }, 4500);
+    this.onActivity(); // Give the recognizer time to flush final results before the server lease expires.
+    try { this.recognition.stop(); }
+    catch { this.stop(); this.onError('말한 내용을 확정하지 못했습니다. 대화를 다시 시작해주세요.'); }
+  }
   readLevel() {
     if (!this.running) return;
     const values = this.levelSamples;
@@ -212,9 +241,12 @@ export class BrowserVoice {
     this.cancelRecognitionStart?.();
     this.cancelRecognitionStart = null;
     this.userSpeaking = false;
+    this.recognitionListening = false; this.finalizingRecognition = false;
     this.gate.reset();
     clearTimeout(this.restartTimer);
     clearTimeout(this.levelTimer);
+    clearTimeout(this.finalizeTimer);
+    clearTimeout(this.resultIdleTimer); this.lastResultSignature = null;
     if (this.recognition) {
       this.recognition.onend = null;
       this.recognition.abort();

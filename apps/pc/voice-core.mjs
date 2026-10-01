@@ -1,8 +1,8 @@
 /** Provider-neutral turn boundaries and stale playback protection. */
 export class TranscriptBuffer {
-  constructor({ onCommit, onPreview = () => {}, onEmpty = () => {}, silenceMs = 1200,
+  constructor({ onCommit, onPreview = () => {}, onEmpty = () => {}, onNeedsFinal = () => {}, silenceMs = 1200,
                 schedule = setTimeout, unschedule = clearTimeout }) {
-    Object.assign(this, { onCommit, onPreview, onEmpty, silenceMs, schedule, unschedule });
+    Object.assign(this, { onCommit, onPreview, onEmpty, onNeedsFinal, silenceMs, schedule, unschedule });
     this.items = new Map();
     this.consumed = new Set();
     this.timer = null;
@@ -22,12 +22,13 @@ export class TranscriptBuffer {
   speechEnded() {
     this.arm();
   }
+  get hasInterim() { return [...this.items.values()].some(item => !item.final); }
   arm() {
     this.activity();
     this.timer = this.schedule(() => {
       this.timer = null;
       const items = [...this.items.values()];
-      if (items.some(item => !item.final)) return; // Never pretend an interim result is final.
+      if (this.hasInterim) { this.onNeedsFinal(); return; } // Ask the adapter to finalize; never guess a final transcript.
       if (!items.length) { this.onEmpty(); return; }
       const text = items.map(item => item.text.trim()).join(' ');
       for (const item of items) this.consumed.add(item.key);
