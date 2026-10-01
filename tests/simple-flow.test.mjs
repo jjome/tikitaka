@@ -1,0 +1,101 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+
+let fixtureId = 0;
+const tick = () => new Promise(resolve => setTimeout(resolve, 0));
+async function fixture(createSession) {
+  const names = ['window', 'document', 'navigator', 'location', 'sessionStorage', 'WebSocket', 'fetch',
+    'AudioContext', 'SpeechSynthesisUtterance', 'requestAnimationFrame', 'cancelAnimationFrame'];
+  const originals = new Map(names.map(name => [name, Object.getOwnPropertyDescriptor(globalThis, name)]));
+  const nodes = new Map();
+  function node(id) {
+    if (!nodes.has(id)) nodes.set(id, { textContent: '', dataset: {}, hidden: true, disabled: true,
+      classList: { toggle() {} }, addEventListener(type, handler) { this[type] = handler; } });
+    return nodes.get(id);
+  }
+  const records = [], voices = [], storage = new Map(), page = {};
+  let streamsStopped = 0;
+  const globals = {
+    document: { getElementById: node, addEventListener() {} },
+    window: { SpeechRecognition: class { start() { this.onstart?.(); } abort() {} },
+      speechSynthesis: { cancel() {}, getVoices: () => [], speak(u) { voices.push(u); } },
+      addEventListener(type, handler) { page[type] = handler; } },
+    navigator: { mediaDevices: { async getUserMedia() { return { getTracks: () => [{ stop() { streamsStopped++; } }] }; } } },
+    location: { protocol: 'http:', host: 'localhost' },
+    sessionStorage: { getItem: key => storage.get(key) || null, setItem: (k, v) => storage.set(k, v), removeItem: k => storage.delete(k) },
+    AudioContext: class { async resume() {} async close() {}
+      createAnalyser() { return { fftSize: 512, getFloatTimeDomainData(v) { v.fill(0); } }; }
+      createMediaStreamSource() { return { connect() {} }; } },
+    SpeechSynthesisUtterance: class { constructor(text) { this.text = text; } },
+    requestAnimationFrame: () => 1, cancelAnimationFrame() {},
+    fetch: async (url, options) => url === '/api/config'
+      ? { ok: true, json: async () => ({ mode: 'demo', default_language: 'ko' }) }
+      : createSession(url, options),
+    WebSocket: class {
+      static OPEN = 1;
+      constructor() { this.readyState = 0; queueMicrotask(() => { if (this.readyState !== 3) { this.readyState = 1; this.onopen?.(); } }); }
+      send(raw) {
+        const data = JSON.parse(raw); records.push(data);
+        const emit = event => queueMicrotask(() => { if (this.readyState === 1) this.onmessage?.({ data: JSON.stringify(event) }); });
+        if (data.type === 'authenticate') emit({ type: 'snapshot', state: 'paused', messages: [] });
+        if (data.type === 'resume') {
+          emit({ type: 'state', state: 'speaking' });
+          emit({ type: 'message', message: { id: 'm1', revision: 1, speaker: 'a', delivery: 'pending', text: '먼저 이야기할게요.' } });
+        }
+        if (data.type === 'end') emit({ type: 'state', state: 'ended' });
+      }
+      close() { this.readyState = 3; queueMicrotask(() => this.onclose?.()); }
+    },
+  };
+  for (const [key, value] of Object.entries(globals)) Object.defineProperty(globalThis, key, { configurable: true, writable: true, value });
+  await import(`../apps/pc/simple.mjs?fixture=${++fixtureId}`);
+  await tick();
+  return { node, records, voices, stopped: () => streamsStopped,
+    async cleanup() {
+      if (node('talk').dataset.active === 'true') node('talk').click();
+      page.pagehide?.(); await tick();
+      for (const [key, descriptor] of originals) {
+        if (descriptor) Object.defineProperty(globalThis, key, descriptor); else delete globalThis[key];
+      }
+    } };
+}
+
+test('one click selects a topic automatically, opens voice, and starts the AI; same button ends', async () => {
+  const requests = [];
+  const f = await fixture(async (url, options) => {
+    requests.push(JSON.parse(options.body));
+    return { ok: true, json: async () => ({ id: 's1', token: 'token', snapshot: { language: 'ko' } }) };
+  });
+  try {
+    f.node('talk').click(); await tick(); await tick();
+    assert.deepEqual(requests, [{ language: 'ko', topic_id: 'auto' }]);
+    assert.equal(f.records.filter(r => r.type === 'resume').length, 1);
+    assert.equal(f.voices[0].text, '먼저 이야기할게요.');
+    assert.equal(f.node('talk').textContent, '대화 끝내기');
+    f.node('talk').click(); await tick();
+    assert.equal(f.records.filter(r => r.type === 'end').length, 1);
+    assert.equal(f.node('talk').textContent, '대화 시작');
+    assert.equal(f.stopped(), 1);
+  } finally { await f.cleanup(); }
+});
+
+test('cancelled preparation cannot overwrite a restarted session or start late audio', async () => {
+  let resolveFirst;
+  let calls = 0;
+  const f = await fixture(async () => {
+    calls++;
+    if (calls === 1) return new Promise(resolve => { resolveFirst = resolve; });
+    return { ok: true, json: async () => ({ id: 'new', token: 'new-token', snapshot: { language: 'ko' } }) };
+  });
+  try {
+    f.node('talk').click(); await tick();
+    f.node('talk').click();
+    f.node('talk').click(); await tick(); await tick();
+    resolveFirst({ ok: true, json: async () => ({ id: 'obsolete', token: 'old-token', snapshot: { language: 'ko' } }) });
+    await tick();
+    assert.deepEqual(f.records.filter(r => r.type === 'authenticate').map(r => r.token), ['new-token']);
+    assert.equal(f.records.filter(r => r.type === 'resume').length, 1);
+    assert.equal(f.voices.length, 1);
+    assert.equal(f.node('talk').textContent, '대화 끝내기');
+  } finally { await f.cleanup(); }
+});

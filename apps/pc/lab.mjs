@@ -1,3 +1,4 @@
+// Internal diagnostics, intentionally separate from the one-button product screen.
 import { BrowserVoice } from './voice.mjs';
 import { MessageOutbox } from './outbox.mjs';
 

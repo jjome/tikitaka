@@ -21,7 +21,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class SessionCreate(BaseModel):
-    topic_id: str = Field(default='food', max_length=30)
+    topic_id: str = Field(default='auto', max_length=30)
     language: Literal['ko', 'en'] = 'ko'
 
 
@@ -60,18 +60,20 @@ def create_app(db_path=None, gateway=None, policy=None):
     @app.get('/api/config')
     async def config():
         return {'mode': app.state.gateway.mode,
+                'default_language': 'en' if os.getenv('TIKITAKA_LANGUAGE') == 'en' else 'ko',
                 'topics': [{'id': key, 'ko': v['ko'], 'en': v['en']} for key, v in TOPICS.items()],
                 'personas': [{'id': p.id, 'name': p.name, 'name_en': p.name_en, 'role': p.role} for p in PERSONAS.values()]}
 
     @app.post('/api/sessions', status_code=201)
     async def create_session(body: SessionCreate):
-        if body.topic_id not in TOPICS:
+        topic_id = secrets.choice(list(TOPICS)) if body.topic_id == 'auto' else body.topic_id
+        if topic_id not in TOPICS:
             raise HTTPException(422, '지원하지 않는 주제입니다.')
         # This endpoint is for loopback development, not public anonymous hosting.
         if len(engines) >= 100:
             raise HTTPException(429, '개발 세션 상한에 도달했습니다. 서버를 다시 시작하세요.')
         sid, token = uuid.uuid4().hex, secrets.token_urlsafe(32)
-        engine = ConversationEngine(sid, body.topic_id, body.language, app.state.gateway,
+        engine = ConversationEngine(sid, topic_id, body.language, app.state.gateway,
                                     app.state.repository, policy)
         app.state.repository.create(sid, token, engine.snapshot())
         engines[sid] = engine
@@ -138,6 +140,10 @@ def create_app(db_path=None, gateway=None, policy=None):
         @app.get('/')
         async def index():
             return FileResponse(web_path / 'index.html')
+
+        @app.get('/lab')
+        async def lab():
+            return FileResponse(web_path / 'lab.html')
 
     return app
 

@@ -30,6 +30,18 @@ class APITests(unittest.TestCase):
         for body in ({'topic_id': 'unknown'}, {'language': 'ja'}):
             self.assertEqual(self.client.post('/api/sessions', json=body).status_code, 422)
 
+    def test_one_button_defaults_choose_a_topic(self):
+        from backend.app.content import TOPICS
+        result = self.client.post('/api/sessions', json={})
+        self.assertEqual(result.status_code, 201)
+        self.assertIn(result.json()['snapshot']['topic_id'], TOPICS)
+        self.assertEqual(result.json()['snapshot']['state'], 'paused')
+
+    def test_default_language_configured_for_release(self):
+        from unittest.mock import patch
+        with patch.dict('os.environ', {'TIKITAKA_LANGUAGE': 'en'}):
+            self.assertEqual(self.client.get('/api/config').json()['default_language'], 'en')
+
     def test_socket_authentication_required(self):
         s = self.session()
         with self.client.websocket_connect(f'/api/sessions/{s["id"]}/events') as ws:

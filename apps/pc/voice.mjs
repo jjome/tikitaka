@@ -23,7 +23,7 @@ export class BrowserVoice {
   }
   async start(language) {
     if (this.running || this.starting) return;
-    if (!this.supported) throw new Error('이 브라우저는 음성 인식을 지원하지 않습니다. Chrome에서 열거나 텍스트 진단을 사용해주세요.');
+    if (!this.supported) throw new Error('이 브라우저는 음성 인식을 지원하지 않습니다. Chrome에서 열어주세요.');
     const generation = ++this.generation;
     this.starting = true;
     this.language = language;
@@ -42,7 +42,8 @@ export class BrowserVoice {
       if (generation !== this.generation) { stream.getTracks().forEach(t => t.stop()); return; }
       this.stream = stream;
       this.context = new AudioContext();
-      await this.context.resume();
+      await Promise.race([this.context.resume(), cancelled]);
+      if (generation !== this.generation) return;
       this.analyser = this.context.createAnalyser();
       this.analyser.fftSize = 512;
       this.context.createMediaStreamSource(stream).connect(this.analyser);

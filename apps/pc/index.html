@@ -5,44 +5,25 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#f6f7f3">
   <link rel="icon" href="/assets/icon.svg" type="image/svg+xml">
-  <title>Tikitaka · 세 명의 대화</title>
-  <link rel="stylesheet" href="/assets/style.css">
-  <script type="module" src="/assets/app.mjs"></script>
+  <title>Tikitaka · 대화 시작</title>
+  <link rel="stylesheet" href="/assets/simple.css">
+  <script type="module" src="/assets/simple.mjs"></script>
 </head>
 <body>
-  <header class="topbar">
-    <a class="brand" href="/" aria-label="Tikitaka 시작 화면"><span class="brandmark">t</span>tikitaka<span class="brand-dot">.</span></a>
-    <span class="build-label">PC VOICE LAB <span id="mode">연결 중</span></span>
-  </header>
-  <main class="layout">
-    <aside class="sidebar">
-      <div class="eyebrow">THREE VOICES. ONE CONVERSATION.</div>
-      <h1>듣다가,<br>할 말이 생기면<br><span>끼어들어요.</span></h1>
-      <p class="intro">두 친구가 먼저 이야기를 시작해요.<br>당신은 편하게 듣고, 자연스럽게 말하면 돼요.</p>
-      <div class="setup">
-        <label for="language">대화 언어</label>
-        <select id="language"><option value="ko">한국어 · 내부 검증</option><option value="en">English · 출시 언어</option></select>
-        <label for="topic">오늘의 이야기</label>
-        <select id="topic" disabled><option>주제 불러오는 중</option></select>
-      </div>
-      <div class="character"><span class="avatar minji">M</span><div><strong>민지 <span>AI</span></strong><p>잘 들어주고, 부드럽게 이어가는 친구</p></div><span class="role">A</span></div>
-      <div class="character"><span class="avatar junho">J</span><div><strong>준호 <span>AI</span></strong><p>다른 의견도 장난스럽게 말하는 친구</p></div><span class="role">B</span></div>
-      <p id="demo-note" class="small-note">대본 기반 데모로 대화 흐름을 시험해요.<br>실제 AI 대화는 서버 설정으로 연결할 수 있어요.</p>
-      <p class="privacy-note">음성 인식은 브라우저 서비스로 처리될 수 있어요. 이어폰을 쓰면 PC에서 끼어들기를 시험하기 편해요.</p>
-    </aside>
-    <section class="room" aria-label="세 명의 대화방">
-      <div class="room-header"><div><span class="room-dot"></span><strong id="room-title">오늘의 대화</strong></div><span id="state" role="status">대화 준비</span></div>
-      <div id="messages" class="messages" aria-live="polite" aria-relevant="additions">
-        <div id="empty" class="empty-state"><div class="conversation-art" aria-hidden="true"><span class="bubble left">hey!</span><span class="bubble right">really?</span><span class="bubble you">you</span></div><h2>말문을 여는 건<br>친구들에게 맡겨요.</h2><p>마이크를 켜면 대화가 시작돼요.<br>말하는 중에도 언제든 끼어들 수 있어요.</p></div>
-      </div>
-      <button id="latest" class="latest" hidden>새 메시지 · 최신 대화로 이동 ↓</button>
-      <div class="live-transcript"><span class="mic-indicator" id="mic-dot"></span><span id="mic-status">마이크 꺼짐</span><span id="transcript"></span><meter id="level" min="0" max="1" value="0" aria-label="마이크 입력 크기"></meter></div>
-      <div id="error" class="error" role="alert" hidden></div>
-      <div class="controls"><button id="start" class="primary" disabled><span aria-hidden="true">◉</span> 음성 대화 시작</button><button id="pause" class="secondary" disabled>일시정지</button><button id="end" class="quiet" disabled>대화 종료</button></div>
-      <details class="diagnostics"><summary>마이크 없이 대화 흐름 시험하기</summary><p>텍스트 진단에서는 AI 발화를 화면에 표시하고 자동으로 다음 턴을 진행해요.</p><button id="text-start" class="secondary" disabled>텍스트 진단 시작</button><button id="interrupt" class="secondary" disabled>끼어들기 신호 시험</button><form id="text-form"><label class="sr-only" for="text-input">내 의견</label><input id="text-input" maxlength="1000" placeholder="내 의견을 입력하세요" autocomplete="off"><button id="send" type="submit" disabled>보내기</button></form><div class="metrics"><span>생성 <strong id="calls">0</strong></span><span>취소 <strong id="cancelled">0</strong></span><span>폐기 <strong id="discarded">0</strong></span></div></details>
-    </section>
+  <header><div class="brand"><span class="brandmark">t</span>tikitaka<span class="brand-dot">.</span></div></header>
+  <main>
+    <div class="intro"><h1>말하고 싶을 때,<br>그냥 시작하세요.</h1><p>두 AI 친구와, 편하게 나누는 대화.</p></div>
+    <div class="friends" aria-label="함께 대화하는 AI 친구 두 명">
+      <div class="friend" id="friend-a"><div class="face minji" aria-hidden="true"><i></i><i></i><span></span></div><p>민지 <small>AI</small></p></div>
+      <div class="between" aria-hidden="true">···</div>
+      <div class="friend" id="friend-b"><div class="face junho" aria-hidden="true"><i></i><i></i><span></span></div><p>준호 <small>AI</small></p></div>
+    </div>
+    <div class="caption" aria-live="polite"><span id="speaker"></span><p id="caption">친구들이 먼저 이야기할게요.<br>할 말이 생기면 언제든 끼어들어요.</p></div>
+    <p id="error" class="error" role="alert" hidden></p>
+    <button id="talk" disabled>대화 시작</button>
+    <p id="status" class="status" role="status">준비 중…</p>
+    <meter id="level" min="0" max="1" value="0" aria-label="마이크 입력 크기"></meter>
   </main>
-  <footer>한국어는 개발과 검증에 사용합니다. 출시 MVP는 영어 음성 Android 앱입니다.</footer>
+  <footer><span id="build">개발용 · 대본 데모</span></footer>
 </body>
 </html>
-
