@@ -54,18 +54,28 @@ export class BrowserVoice {
       this.recognition.lang = language === 'ko' ? 'ko-KR' : 'en-US';
       this.recognition.continuous = true;
       this.recognition.interimResults = true;
-      this.recognition.onstart = () => { this.cycle += 1; this.onStatus('마이크 켜짐'); };
+      const alive = () => this.running && generation === this.generation;
+      let ready = false, resolveReady, rejectReady;
+      const recognitionReady = new Promise((resolve, reject) => { resolveReady = resolve; rejectReady = reject; });
+      this.cancelRecognitionStart = () => resolveReady(false);
+      const readyTimer = setTimeout(() => rejectReady(new Error(
+        '음성 인식 서비스가 응답하지 않습니다. 이 주소를 별도 Google Chrome 창에서 열어주세요.')), 8000);
+      this.recognition.onstart = () => {
+        if (!alive()) return;
+        ready = true; clearTimeout(readyTimer);
+        this.cycle += 1; this.onStatus('마이크 켜짐'); resolveReady(true);
+      };
       this.recognition.onspeechstart = () => {
-        if (!this.running) return;
+        if (!alive()) return;
         this.beginSpeech();
         this.buffer.activity();
         this.onActivity();
       };
       this.recognition.onspeechend = () => {
-        if (this.running) this.buffer.speechEnded();
+        if (alive()) this.buffer.speechEnded();
       };
       this.recognition.onresult = event => {
-        if (!this.running) return;
+        if (!alive()) return;
         const items = [];
         for (let i = 0; i < event.results.length; i++) {
           const item = { key: `${this.cycle}:${i}`, text: event.results[i][0].transcript, final: event.results[i].isFinal };
@@ -77,25 +87,37 @@ export class BrowserVoice {
         this.buffer.feed(items);
       };
       this.recognition.onerror = event => {
-        if (!this.running || event.error === 'aborted' || event.error === 'no-speech') return;
+        if (!alive() || event.error === 'aborted' || event.error === 'no-speech') return;
         const messages = {
           'not-allowed': '마이크 권한을 허용해주세요.',
-          'service-not-allowed': '이 브라우저의 음성 인식 서비스를 사용할 수 없습니다.',
-          'network': '음성 인식 연결에 실패했습니다. 인터넷 연결과 브라우저를 확인해주세요.',
+          'service-not-allowed': '이 브라우저의 음성 인식 서비스를 사용할 수 없습니다. 별도 Google Chrome 창에서 열어주세요.',
+          'network': '브라우저의 음성 인식 서비스에 연결하지 못했습니다. 내장 브라우저라면 이 주소를 별도 Google Chrome 창에서 열어주세요. Chrome에서도 실패하면 인터넷 연결을 확인해주세요.',
           'audio-capture': '마이크를 찾을 수 없습니다. PC 입력 장치를 확인해주세요.',
         };
-        this.stop();
-        this.onError(messages[event.error] || `음성 인식이 중단됐습니다 (${event.error}).`);
+        const message = messages[event.error] || `음성 인식이 중단됐습니다 (${event.error}).`;
+        if (!ready) { clearTimeout(readyTimer); rejectReady(new Error(message)); }
+        else { this.stop(); this.onError(message); }
       };
       this.recognition.onend = () => {
-        if (!this.running || generation !== this.generation) return;
+        if (!alive()) return;
+        if (!ready) {
+          clearTimeout(readyTimer);
+          rejectReady(new Error('음성 인식을 시작하지 못했습니다. 별도 Google Chrome 창에서 열어주세요.'));
+          return;
+        }
         this.restartTimer = setTimeout(() => {
           if (!this.running || generation !== this.generation) return;
           try { this.recognition.start(); }
           catch { this.stop(); this.onError('음성 인식을 다시 시작하지 못했습니다. 재개해주세요.'); }
         }, 250);
       };
-      this.recognition.start();
+      try {
+        this.recognition.start();
+        await recognitionReady;
+      } finally {
+        clearTimeout(readyTimer);
+        this.cancelRecognitionStart = null;
+      }
     } catch (error) {
       this.stop();
       throw new Error(error.name === 'NotAllowedError' ? '마이크 권한을 허용해주세요.' : error.message);
@@ -136,6 +158,8 @@ export class BrowserVoice {
     this.running = false;
     this.cancelStart?.();
     this.cancelStart = null;
+    this.cancelRecognitionStart?.();
+    this.cancelRecognitionStart = null;
     this.userSpeaking = false;
     this.gate.reset();
     clearTimeout(this.restartTimer);

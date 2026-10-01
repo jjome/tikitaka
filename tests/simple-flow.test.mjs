@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 let fixtureId = 0;
 const tick = () => new Promise(resolve => setTimeout(resolve, 0));
-async function fixture(createSession) {
+async function fixture(createSession, { waitForRecognition = false } = {}) {
   const names = ['window', 'document', 'navigator', 'location', 'sessionStorage', 'WebSocket', 'fetch',
     'AudioContext', 'SpeechSynthesisUtterance', 'requestAnimationFrame', 'cancelAnimationFrame'];
   const originals = new Map(names.map(name => [name, Object.getOwnPropertyDescriptor(globalThis, name)]));
@@ -13,11 +13,14 @@ async function fixture(createSession) {
       classList: { toggle() {} }, addEventListener(type, handler) { this[type] = handler; } });
     return nodes.get(id);
   }
-  const records = [], voices = [], storage = new Map(), page = {};
+  const records = [], voices = [], recognitions = [], storage = new Map(), page = {};
   let streamsStopped = 0;
   const globals = {
     document: { getElementById: node, addEventListener() {} },
-    window: { SpeechRecognition: class { start() { this.onstart?.(); } abort() {} },
+    window: { SpeechRecognition: class {
+      constructor() { recognitions.push(this); }
+      start() { if (!waitForRecognition) this.onstart?.(); } abort() {}
+    },
       speechSynthesis: { cancel() {}, getVoices: () => [], speak(u) { voices.push(u); } },
       addEventListener(type, handler) { page[type] = handler; } },
     navigator: { mediaDevices: { async getUserMedia() { return { getTracks: () => [{ stop() { streamsStopped++; } }] }; } } },
@@ -50,7 +53,7 @@ async function fixture(createSession) {
   for (const [key, value] of Object.entries(globals)) Object.defineProperty(globalThis, key, { configurable: true, writable: true, value });
   await import(`../apps/pc/simple.mjs?fixture=${++fixtureId}`);
   await tick();
-  return { node, records, voices, stopped: () => streamsStopped,
+  return { node, records, voices, recognitions, stopped: () => streamsStopped,
     async cleanup() {
       if (node('talk').dataset.active === 'true') node('talk').click();
       page.pagehide?.(); await tick();
@@ -97,5 +100,47 @@ test('cancelled preparation cannot overwrite a restarted session or start late a
     assert.equal(f.records.filter(r => r.type === 'resume').length, 1);
     assert.equal(f.voices.length, 1);
     assert.equal(f.node('talk').textContent, '대화 끝내기');
+  } finally { await f.cleanup(); }
+});
+
+const sessionResponse = async () => ({ ok: true, json: async () => ({ id: 's1', token: 'token', snapshot: { language: 'ko' } }) });
+
+test('AI must wait for actual recognition readiness, not just microphone access', async () => {
+  const f = await fixture(sessionResponse, { waitForRecognition: true });
+  try {
+    f.node('talk').click(); await tick(); await tick();
+    assert.equal(f.records.filter(r => r.type === 'resume').length, 0);
+    assert.equal(f.voices.length, 0);
+    f.recognitions[0].onstart(); await tick();
+    assert.equal(f.records.filter(r => r.type === 'resume').length, 1);
+    assert.equal(f.voices.length, 1);
+  } finally { await f.cleanup(); }
+});
+
+test('embedded recognition network failure prevents AI start and releases capture', async () => {
+  const f = await fixture(sessionResponse, { waitForRecognition: true });
+  try {
+    f.node('talk').click(); await tick(); await tick();
+    f.recognitions[0].onerror({ error: 'network' }); await tick();
+    assert.equal(f.records.filter(r => r.type === 'resume').length, 0);
+    assert.equal(f.voices.length, 0);
+    assert.equal(f.stopped(), 1);
+    assert.equal(f.node('talk').textContent, '대화 시작');
+    assert.equal(f.node('error').hidden, false);
+    assert.match(f.node('error').textContent, /별도 Google Chrome/);
+  } finally { await f.cleanup(); }
+});
+
+test('cancel while recognition connects cannot start AI on a late ready event', async () => {
+  const f = await fixture(sessionResponse, { waitForRecognition: true });
+  try {
+    f.node('talk').click(); await tick(); await tick();
+    const recognizer = f.recognitions[0];
+    f.node('talk').click(); await tick();
+    recognizer.onstart(); await tick();
+    assert.equal(f.records.filter(r => r.type === 'resume').length, 0);
+    assert.equal(f.voices.length, 0);
+    assert.equal(f.stopped(), 1);
+    assert.equal(f.node('talk').textContent, '대화 시작');
   } finally { await f.cleanup(); }
 });
