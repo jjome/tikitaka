@@ -78,3 +78,10 @@ class APITests(unittest.TestCase):
             with self.client.websocket_connect(f'/api/sessions/{s["id"]}/events', headers={'origin': 'https://example.com'}):
                 pass
 
+    def test_non_string_auth_token_is_rejected(self):
+        s = self.session()
+        with self.client.websocket_connect(f'/api/sessions/{s["id"]}/events') as ws:
+            ws.send_json({'type': 'authenticate', 'token': 123})
+            with self.assertRaises(WebSocketDisconnect):
+                ws.receive_json()
+

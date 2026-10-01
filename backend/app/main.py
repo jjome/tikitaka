@@ -43,7 +43,7 @@ def create_app(db_path=None, gateway=None, policy=None):
 
     def authorized_engine(session_id, token):
         repo = app.state.repository
-        if not token or not repo.authorize(session_id, token):
+        if not isinstance(token, str) or not token or not repo.authorize(session_id, token):
             raise HTTPException(404, '세션을 찾을 수 없습니다.')
         if session_id not in engines:
             saved = repo.load(session_id)

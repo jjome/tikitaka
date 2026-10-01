@@ -126,7 +126,15 @@ class ConversationEngine:
 
     async def _watch_connection(self, epoch):
         while epoch == self._connection_epoch:
-            await asyncio.sleep(min(1, self.policy.heartbeat_timeout / 3))
+            await asyncio.sleep(min(.5, self.policy.heartbeat_timeout / 3, self.policy.max_session_seconds / 3))
+            if time.time() - self.created_at >= self.policy.max_session_seconds:
+                async with self._lock:
+                    if epoch == self._connection_epoch and self.state != 'ended':
+                        self._invalidate()
+                        await self._interrupt_pending()
+                        self.stop_reason = 'session_limit'
+                        await self._state('ended')
+                return
             if time.monotonic() - self._last_heartbeat > self.policy.heartbeat_timeout:
                 await self.disconnect(epoch)
                 return

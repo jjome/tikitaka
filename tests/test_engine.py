@@ -220,6 +220,13 @@ class EngineTests(unittest.IsolatedAsyncioTestCase):
             await e.handle({'type': 'user_message', 'text': '안녕', 'client_message_id': 'u1'})
         self.assertEqual(len(e.messages), 0)
 
+    async def test_time_limit_ends_even_while_waiting_for_audio(self):
+        e = await self.make(policy=Policy(max_session_seconds=.04))
+        await self.speak(e)
+        await eventually(lambda: e.state == 'ended')
+        self.assertEqual(e.stop_reason, 'session_limit')
+        self.assertEqual(e.messages[-1].delivery, 'interrupted')
+
     async def test_restoration_keeps_history_and_pauses(self):
         e = await self.make()
         m = await self.speak(e)

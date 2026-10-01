@@ -64,6 +64,7 @@ Gateway 동시 실행은 세션별 1개로 제한한다. 취소가 Provider 내�
 |---|---|
 | `resume` / `pause` / `end` | 세션 제어 |
 | `speech_started` | 사용자 발화 시작과 재생 중단 |
+| `speech_activity` | 발화가 계속될 때 전사 대기 타임아웃 갱신 |
 | `user_message` | 확정 전사와 `client_message_id` |
 | `speech_cancelled` | 음성은 감지됐지만 확정 전사 없음 |
 | `playback_finished` | `message_id`, `revision`에 해당하는 음성 재생 완료 |
@@ -91,8 +92,8 @@ Gateway 입력은 해당 Persona, Topic, 언어, 최근 확정 기록, 목적, �
 
 - SpeechRecognition의 중간 전사는 화면에만 표시하며, 최종 전사와 발화 종료 조건이 충족돼야 전송한다.
 - 재생 시작·종료·오류를 서버에 알린다. 취소 시 이전 재생 콜백을 토큰으로 무효화한다.
-- 웹 데모에서는 `speechstart`와 중간 전사를 끼어들기 신호로 사용한다. 선택적으로 마이크 파형 진단을 표시한다.
-- 브라우저 STT가 사용하는 캡처와 별도 getUserMedia 캡처는 같다고 가정하지 않는다. 별도 마이크 미터에서 요청한 에코 제거가 STT에도 적용된다고 표시하지 않는다.
+- PC에서는 getUserMedia 입력의 에너지 활동이 120ms 지속되면 음성을 로컬에서 취소한다. SpeechRecognition의 `speechstart`와 새 중간 전사도 보조 신호로 사용한다. 에너지 감지는 말소리와 소음을 의미적으로 구분하지 못한다.
+- 브라우저 STT가 사용하는 캡처와 getUserMedia 활동 감지 캡처는 같다고 가정하지 않는다. 활동 감지 경로에서 요청한 에코 제거가 STT에도 적용된다고 표시하지 않는다.
 - 스피커 에코, 소음, 짧은 머뭇거림은 Android 실제 오디오 경로에서 다시 검증한다. 초기 PC 음성 검증은 이어폰 사용을 권장한다.
 
 ## 로컬 운영 범위
