@@ -3,13 +3,14 @@ from contextlib import asynccontextmanager
 import os
 from pathlib import Path
 import secrets
+import time
 import uuid
 from typing import Literal
 
 from fastapi import FastAPI, HTTPException, Header, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 from .content import TOPICS, PERSONAS
 from .domain import DomainError, Policy
@@ -23,6 +24,21 @@ ROOT = Path(__file__).resolve().parents[2]
 class SessionCreate(BaseModel):
     topic_id: str = Field(default='auto', max_length=30)
     language: Literal['ko', 'en'] = 'ko'
+
+
+class AudioDiagnostics(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    build: str = Field(max_length=50)
+    source: str = Field(default='', max_length=160)
+    context_state: str = Field(default='', max_length=30)
+    track_state: str = Field(default='', max_length=30)
+    muted: bool = False
+    enabled: bool = True
+    peak: float = Field(ge=0, le=1, allow_inf_nan=False)
+    frames: int = Field(ge=0, le=1000000)
+    speech_starts: int = Field(ge=0, le=1000000)
+    results: int = Field(ge=0, le=1000000)
+    recognition_error: str = Field(default='', max_length=50)
 
 
 def create_app(db_path=None, gateway=None, policy=None):
@@ -40,6 +56,13 @@ def create_app(db_path=None, gateway=None, policy=None):
         app.state.repository.close()
 
     app = FastAPI(title='Tikitaka PC Voice Prototype', lifespan=lifespan)
+
+    @app.middleware('http')
+    async def development_cache(request, call_next):
+        response = await call_next(request)
+        if request.url.path in {'/', '/lab', '/mic'} or request.url.path.startswith('/assets/'):
+            response.headers['Cache-Control'] = 'no-store'
+        return response
 
     def authorized_engine(session_id, token):
         repo = app.state.repository
@@ -82,6 +105,12 @@ def create_app(db_path=None, gateway=None, policy=None):
     @app.get('/api/sessions/{session_id}')
     async def get_session(session_id: str, x_session_token: str | None = Header(default=None)):
         return authorized_engine(session_id, x_session_token).snapshot()
+
+    @app.post('/api/sessions/{session_id}/audio-diagnostics', status_code=204)
+    async def audio_diagnostics(session_id: str, body: AudioDiagnostics,
+                                x_session_token: str | None = Header(default=None)):
+        authorized_engine(session_id, x_session_token)
+        app.state.repository.save_audio_diagnostics(session_id, {'at': time.time(), **body.model_dump()})
 
     @app.websocket('/api/sessions/{session_id}/events')
     async def session_events(ws: WebSocket, session_id: str):
@@ -144,6 +173,10 @@ def create_app(db_path=None, gateway=None, policy=None):
         @app.get('/lab')
         async def lab():
             return FileResponse(web_path / 'lab.html')
+
+        @app.get('/mic')
+        async def mic():
+            return FileResponse(web_path / 'mic.html')
 
     return app
 

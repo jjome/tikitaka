@@ -1,8 +1,13 @@
-import { TranscriptBuffer, PlaybackGuard, ActivityGate } from './voice-core.mjs';
+import { TranscriptBuffer, PlaybackGuard, ActivityGate } from './voice-core.mjs?v=20261002-mic1';
+
+export const VOICE_BUILD = '2026-10-02-mic-diagnostics-1';
+export function preferredMicrophone() {
+  try { return window.localStorage?.getItem('tikitaka_microphone') || ''; } catch { return ''; }
+}
 
 export class BrowserVoice {
-  constructor({ onStart, onActivity, onText, onPreview, onEmpty, onError, onLevel, onStatus }) {
-    Object.assign(this, { onStart, onActivity, onText, onPreview, onEmpty, onError, onLevel, onStatus });
+  constructor({ onStart, onActivity, onText, onPreview, onEmpty, onError, onLevel, onStatus, onDiagnostics = () => {} }) {
+    Object.assign(this, { onStart, onActivity, onText, onPreview, onEmpty, onError, onLevel, onStatus, onDiagnostics });
     this.running = false;
     this.starting = false;
     this.generation = 0;
@@ -28,8 +33,12 @@ export class BrowserVoice {
     const generation = ++this.generation;
     this.starting = true;
     this.language = language;
+    this.diagnostics = { build: VOICE_BUILD, peak: 0, frames: 0, speech_starts: 0, results: 0, recognition_error: '' };
+    this.lastDiagnostics = -Infinity;
     try {
+      const deviceId = preferredMicrophone();
       const capture = navigator.mediaDevices.getUserMedia({ audio: {
+        ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
         echoCancellation: true, noiseSuppression: true, autoGainControl: true,
       } });
       // A permission prompt may stay pending forever. Cancellation must release the UI,
@@ -91,6 +100,7 @@ export class BrowserVoice {
       };
       this.recognition.onresult = event => {
         if (!alive()) return;
+        this.diagnostics.results++;
         const items = [];
         for (let i = 0; i < event.results.length; i++) {
           const item = { key: `${this.cycle}:${i}`, text: event.results[i][0].transcript, final: event.results[i].isFinal };
@@ -103,6 +113,8 @@ export class BrowserVoice {
       };
       this.recognition.onerror = event => {
         if (!alive() || event.error === 'aborted' || event.error === 'no-speech') return;
+        this.diagnostics.recognition_error = event.error;
+        this.reportDiagnostics();
         const messages = {
           'not-allowed': '마이크 권한을 허용해주세요.',
           'service-not-allowed': '이 브라우저의 음성 인식 서비스를 사용할 수 없습니다. 별도 Google Chrome 창에서 열어주세요.',
@@ -135,7 +147,8 @@ export class BrowserVoice {
       }
     } catch (error) {
       this.stop();
-      throw new Error(error.name === 'NotAllowedError' ? '마이크 권한을 허용해주세요.' : error.message);
+      throw new Error(error.name === 'NotAllowedError' ? '마이크 권한을 허용해주세요.' :
+        error.name === 'OverconstrainedError' ? '선택한 마이크를 사용할 수 없습니다. 마이크 점검 화면에서 다시 선택해주세요.' : error.message);
     } finally {
       this.starting = false;
     }
@@ -144,6 +157,7 @@ export class BrowserVoice {
     const wasPlaying = Boolean(this.player.current);
     this.player.cancel(); // Stop locally before any callback or server round trip.
     if (!this.userSpeaking || wasPlaying) {
+      this.diagnostics.speech_starts++;
       this.userSpeaking = true;
       this.onStart();
     }
@@ -163,6 +177,9 @@ export class BrowserVoice {
     const rms = Math.sqrt(values.reduce((sum, value) => sum + value * value, 0) / values.length);
     this.onLevel(Math.min(1, rms / Math.max(.018, this.gate.threshold * 3)));
     const now = performance.now();
+    this.diagnostics.peak = Math.max(this.diagnostics.peak, Math.min(1, rms));
+    this.diagnostics.frames++;
+    if (now - this.lastDiagnostics >= 1000) { this.lastDiagnostics = now; this.reportDiagnostics(); }
     if (this.gate.process(rms, now)) {
       if (!this.userSpeaking || this.player.current) this.beginSpeech();
       this.buffer.activity();
@@ -179,7 +196,15 @@ export class BrowserVoice {
     this.player.play(message, { language: this.language,
       voice: voices[message.speaker === 'a' ? 0 : 1] || voices[0], onFinish, onError });
   }
+  reportDiagnostics() {
+    if (!this.diagnostics || !this.stream) return;
+    this.onDiagnostics({ ...this.diagnostics,
+      source: (this.inputTrack?.label || '').slice(0, 160),
+      context_state: this.context?.state || '', track_state: this.inputTrack?.readyState || '',
+      muted: Boolean(this.inputTrack?.muted), enabled: this.inputTrack?.enabled !== false });
+  }
   stop() {
+    this.reportDiagnostics();
     this.generation += 1;
     this.running = false;
     this.cancelStart?.();

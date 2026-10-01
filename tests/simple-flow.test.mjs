@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 let fixtureId = 0;
 const tick = () => new Promise(resolve => setTimeout(resolve, 0));
-async function fixture(createSession, { waitForRecognition = false } = {}) {
+async function fixture(createSession, { waitForRecognition = false, microphone = '' } = {}) {
   const names = ['window', 'document', 'navigator', 'location', 'sessionStorage', 'WebSocket', 'fetch',
     'AudioContext', 'SpeechSynthesisUtterance', 'requestAnimationFrame', 'cancelAnimationFrame'];
   const originals = new Map(names.map(name => [name, Object.getOwnPropertyDescriptor(globalThis, name)]));
@@ -13,19 +13,20 @@ async function fixture(createSession, { waitForRecognition = false } = {}) {
       classList: { toggle() {} }, addEventListener(type, handler) { this[type] = handler; } });
     return nodes.get(id);
   }
-  const records = [], voices = [], recognitions = [], sinks = [], storage = new Map(), page = {};
+  const records = [], voices = [], recognitions = [], sinks = [], reports = [], constraints = [], storage = new Map(), page = {};
   let streamsStopped = 0;
   let microphoneLevel = 0, cancelled = 0;
-  const track = { kind: 'audio', readyState: 'live', stop() { streamsStopped++; } };
+  const track = { label: 'Test microphone', enabled: true, muted: false, kind: 'audio', readyState: 'live', stop() { streamsStopped++; } };
   const globals = {
     document: { getElementById: node, addEventListener() {} },
     window: { SpeechRecognition: class {
       constructor() { recognitions.push(this); }
       start(input) { this.input = input; if (!waitForRecognition) this.onstart?.(); } abort() {}
     },
+      localStorage: { getItem: () => microphone },
       speechSynthesis: { cancel() { cancelled++; }, getVoices: () => [], speak(u) { voices.push(u); } },
       addEventListener(type, handler) { page[type] = handler; } },
-    navigator: { mediaDevices: { async getUserMedia() { return { getTracks: () => [track], getAudioTracks: () => [track] }; } } },
+    navigator: { mediaDevices: { async getUserMedia(options) { constraints.push(options); return { getTracks: () => [track], getAudioTracks: () => [track] }; } } },
     location: { protocol: 'http:', host: 'localhost' },
     sessionStorage: { getItem: key => storage.get(key) || null, setItem: (k, v) => storage.set(k, v), removeItem: k => storage.delete(k) },
     AudioContext: class { async resume() {} async close() {}
@@ -34,7 +35,8 @@ async function fixture(createSession, { waitForRecognition = false } = {}) {
       createGain() { const sink = { gain: { value: 1 }, connect() {}, disconnect() {} }; sinks.push(sink); return sink; } },
     SpeechSynthesisUtterance: class { constructor(text) { this.text = text; } },
     requestAnimationFrame: () => 1, cancelAnimationFrame() {},
-    fetch: async (url, options) => url === '/api/config'
+    fetch: async (url, options) => url.endsWith('/audio-diagnostics') ? (reports.push(JSON.parse(options.body)), { ok: true })
+      : url === '/api/config'
       ? { ok: true, json: async () => ({ mode: 'demo', default_language: 'ko' }) }
       : createSession(url, options),
     WebSocket: class {
@@ -56,7 +58,7 @@ async function fixture(createSession, { waitForRecognition = false } = {}) {
   for (const [key, value] of Object.entries(globals)) Object.defineProperty(globalThis, key, { configurable: true, writable: true, value });
   await import(`../apps/pc/simple.mjs?fixture=${++fixtureId}`);
   await tick();
-  return { node, records, voices, recognitions, sinks, track, stopped: () => streamsStopped,
+  return { node, records, voices, recognitions, sinks, reports, constraints, track, stopped: () => streamsStopped,
     audioLevel: value => { microphoneLevel = value; }, cancelled: () => cancelled,
     async cleanup() {
       if (node('talk').dataset.active === 'true') node('talk').click();
@@ -164,5 +166,19 @@ test('quiet microphone audio alone stops AI immediately without waiting for STT 
     assert.equal(f.node('status').textContent, '당신의 이야기를 듣고 있어요');
     f.voices[0].onend(); // An interrupted browser utterance must not advance AI.
     assert.equal(f.records.filter(r => r.type === 'playback_finished').length, 0);
+  } finally { await f.cleanup(); }
+});
+
+test('microphone chosen in the check page is used by conversation; diagnostics omit audio and device IDs', async () => {
+  const f = await fixture(sessionResponse, { microphone: 'chosen-device' });
+  try {
+    f.node('talk').click(); await tick(); await tick();
+    assert.deepEqual(f.constraints[0].audio.deviceId, { exact: 'chosen-device' });
+    const report = f.reports[0];
+    assert.equal(report.source, 'Test microphone');
+    assert.equal(report.enabled, true);
+    assert.equal(report.muted, false);
+    assert.match(report.build, /mic-diagnostics/);
+    for (const key of ['audio', 'deviceId', 'text', 'token']) assert.equal(key in report, false);
   } finally { await f.cleanup(); }
 });

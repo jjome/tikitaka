@@ -30,6 +30,25 @@ class APITests(unittest.TestCase):
         for body in ({'topic_id': 'unknown'}, {'language': 'ja'}):
             self.assertEqual(self.client.post('/api/sessions', json=body).status_code, 422)
 
+    def test_audio_diagnostics_requires_token_and_forbids_raw_audio(self):
+        s = self.session()
+        route = f'/api/sessions/{s["id"]}/audio-diagnostics'
+        report = {'build': 'test', 'peak': 0, 'frames': 100, 'speech_starts': 0, 'results': 0}
+        self.assertEqual(self.client.post(route, json=report).status_code, 404)
+        headers = {'X-Session-Token': s['token']}
+        self.assertEqual(self.client.post(route, json=report, headers=headers).status_code, 204)
+        for invalid in ({**report, 'peak': -1}, {**report, 'audio': 'raw'}, {**report, 'source': 'x' * 161}):
+            self.assertEqual(self.client.post(route, json=invalid, headers=headers).status_code, 422)
+        row = self.client.app.state.repository.db.execute('SELECT payload FROM audio_diagnostics WHERE session_id=?', (s['id'],)).fetchone()
+        self.assertIn('"peak": 0.0', row[0])
+        self.assertNotIn(s['token'], row[0])
+
+    def test_development_pages_are_not_cached(self):
+        for route in ('/', '/mic', '/assets/voice.mjs'):
+            response = self.client.get(route)
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.headers['cache-control'], 'no-store')
+
     def test_one_button_defaults_choose_a_topic(self):
         from backend.app.content import TOPICS
         result = self.client.post('/api/sessions', json={})

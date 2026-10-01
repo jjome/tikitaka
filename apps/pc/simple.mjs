@@ -1,4 +1,4 @@
-import { BrowserVoice } from './voice.mjs';
+import { BrowserVoice } from './voice.mjs?v=20261002-mic1';
 import { MessageOutbox } from './outbox.mjs';
 
 const nodes = Object.fromEntries(['talk', 'status', 'speaker', 'caption', 'error', 'level', 'build', 'friend-a', 'friend-b']
@@ -42,6 +42,12 @@ function stop(command = 'end') {
 }
 
 const voice = new BrowserVoice({
+  onDiagnostics: report => {
+    if (!session) return;
+    fetch(`/api/sessions/${session.id}/audio-diagnostics`, { method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Session-Token': session.token },
+      body: JSON.stringify(report) }).catch(() => {});
+  },
   onStart: () => { if (active) { state = 'listening'; render(); send({ type: 'speech_started' }); } },
   onActivity: () => { if (active) send({ type: 'speech_activity' }); },
   onText: text => {
