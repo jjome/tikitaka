@@ -2,7 +2,8 @@
     [string]$Model = '',
     [ValidateSet('ko', 'en')][string]$Language = 'ko',
     [ValidateRange(1024, 65535)][int]$Port = 8100,
-    [switch]$Check
+    [switch]$Check,
+    [switch]$CheckAndStart
 )
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
@@ -27,10 +28,14 @@ try {
     $env:TIKITAKA_PROVIDER = 'openai'
     $env:TIKITAKA_MODEL = $Model.Trim()
     $env:TIKITAKA_LANGUAGE = $Language
-    if ($Check) {
-        & $venvPython -X utf8 (Join-Path $PSScriptRoot 'check_openai.py') --language $Language
+    if ($Check -or $CheckAndStart) {
+        $reportDirectory = Join-Path $projectRoot '.runtime'
+        New-Item -ItemType Directory -Force -Path $reportDirectory | Out-Null
+        & $venvPython -X utf8 (Join-Path $PSScriptRoot 'check_openai.py') --language $Language --report (Join-Path $reportDirectory 'api-check.json') |
+            Tee-Object -FilePath (Join-Path $reportDirectory 'api-check.out.log')
         if ($LASTEXITCODE -ne 0) { throw '실제 API 검사가 실패했습니다. 대본 데모로 전환하지 않습니다.' }
-    } else {
+    }
+    if (-not $Check -or $CheckAndStart) {
         & (Join-Path $PSScriptRoot 'start.ps1') -Provider openai -Model $env:TIKITAKA_MODEL -Language $Language -Port $Port
     }
 } finally {

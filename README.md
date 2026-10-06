@@ -49,9 +49,12 @@ API 키가 없다면 [OpenAI API 키 관리](https://platform.openai.com/api-key
 ```powershell
 .\scripts\start-openai.ps1 -Model "YOUR_AVAILABLE_MODEL" -Check
 .\scripts\start-openai.ps1 -Model "YOUR_AVAILABLE_MODEL" -Language ko -Port 8101
+.\scripts\start-openai.ps1 -Model "YOUR_AVAILABLE_MODEL" -Language ko -Port 8101 -CheckAndStart
 ```
 
 `-Check`는 실제 API에 최대 3회 요청해 민지 → 준호 → 민지 응답을 출력한다. 인사·감정에 맞게 응답하는지, 대화 주제가 바뀌어도 따라오는지, 앞서 말한 이름을 기억하는지 사람이 확인한다. 이 검사는 유료 호출이며 음성 품질 검사는 아니다. 실패 시 대본 데모로 대체하지 않는다. 두 번째 명령은 실제 AI 모드 서버를 실행한다. 실행 중인 데모 서버와 포트를 분리했으므로 Chrome에서 `http://127.0.0.1:8101/`을 열어야 한다.
+
+`-CheckAndStart`는 키를 한 번 입력하면 검사 후 같은 키로 서버를 시작한다. 검사 결과는 Git에서 제외한 `.runtime/api-check.out.log`와 UTF-8 `.runtime/api-check.json`에 저장하고 키는 기록하지 않는다. JSON 결과는 Windows PowerShell 콘솔 인코딩과 관계없이 한국어를 보존한다. PowerShell 창을 닫으면 이 서버도 종료되므로 시험하는 동안 창을 유지한다.
 
 ```powershell
 .\scripts\start.ps1 -Provider openai -Model "YOUR_AVAILABLE_MODEL" -Language en -Port 8101
@@ -75,6 +78,8 @@ Python `unittest`로 상태 머신, 취소, 저장, HTTP/WebSocket과 Provider �
 node tests/live-conversation.mjs
 node tests/live-conversation.mjs --interim-only
 ```
+
+실제 API 서버가 8101에서 실행 중일 때 `node tests/live-conversation.mjs --openai`로 기본 화면의 실제 제어 코드와 서버를 연결해 검사한다. 명시적인 `--openai` 옵션이 필요하며 최대 3개 AI 응답을 생성하는 유료 검사다. 사용자 끼어들기와 준호 응답 후 민지의 다음 발화를 확인한다. 마이크·STT·TTS·DOM은 모의 구현이므로 실제 음성 품질 검사는 별도로 진행한다.
 
 `--interim-only`는 브라우저가 최종 전사를 반환하지 않는 조건에서 사용자 발화 두 번과 AI 응답이 이어지는지 검사한다. 이 경우 앱은 발화 종료 후 마지막 인식 문장을 채택한다. 브라우저의 최종 전사보다 정확도가 낮을 수 있으나 시작 버튼을 다시 누르지 않고 대화를 계속한다.
 

@@ -1,15 +1,18 @@
 // Runs the actual PC controller against the local API; only mic/STT/TTS and DOM are simulated.
 import assert from 'node:assert/strict';
 import { fixture } from './helpers/pc-harness.mjs';
-const base = 'http://127.0.0.1:8100';
+const openai = process.argv.includes('--openai'); // Explicit flag: at most three paid turns.
+const base = openai ? 'http://127.0.0.1:8101' : 'http://127.0.0.1:8100';
 const realFetch = globalThis.fetch;
 const interimOnly = process.argv.includes('--interim-only');
+assert.ok(!(openai && interimOnly), 'Use the bounded three-turn API path for live model checks.');
 const health = await (await realFetch(`${base}/api/health`)).json();
-assert.equal(health.mode, 'demo', 'This test must never make paid model calls.');
+assert.equal(health.mode, openai ? 'openai' : 'demo', 'Provider mismatch; paid calls require --openai.');
 const waitFor = async predicate => {
-  const deadline = Date.now() + 10000;
+  const maxWait = openai ? 25000 : 10000;
+  const deadline = Date.now() + maxWait;
   while (!predicate()) {
-    if (Date.now() > deadline) throw new Error('Conversation did not advance within 10 seconds.');
+    if (Date.now() > deadline) throw new Error(`Conversation did not advance within ${maxWait / 1000} seconds.`);
     await new Promise(resolve => setTimeout(resolve, 20));
   }
 };
@@ -25,14 +28,16 @@ try {
   recognizer.onspeechstart(); recognizer.onresult({ results: [interim] }); recognizer.onspeechend();
   first.onend(); // This late callback must not acknowledge interrupted AI audio.
   await waitFor(() => f.voices.length === 2);
-  assert.ok(f.voices[1].text.includes(userText));
+  if (!openai) assert.ok(f.voices[1].text.includes(userText));
   const userCommands = f.records.filter(r => r.type === 'user_message');
   assert.equal(userCommands.length, 1);
   assert.equal(f.records.filter(r => r.type === 'playback_finished').length, 0);
   f.voices[1].onend();
   await waitFor(() => f.voices.length === 3);
-  f.voices[2].onend();
-  await waitFor(() => f.voices.length === 4);
+  if (!openai) {
+    f.voices[2].onend();
+    await waitFor(() => f.voices.length === 4);
+  }
   if (interimOnly) {
     await waitFor(() => recognizer.startCalls >= 2);
     const next = [{ transcript: '민지, 나는 가을도 좋아.' }]; next.isFinal = false;
@@ -45,7 +50,7 @@ try {
   const response = await realFetch(`${base}/api/sessions/${session.id}`, { headers: { 'X-Session-Token': session.token } });
   assert.equal(response.status, 200);
   const report = await response.json();
-  assert.deepEqual(report.messages.map(m => m.speaker), interimOnly ? ['a', 'user', 'b', 'a', 'b', 'user', 'a'] : ['a', 'user', 'b', 'a', 'b']);
+  assert.deepEqual(report.messages.map(m => m.speaker), openai ? ['a', 'user', 'b', 'a'] : interimOnly ? ['a', 'user', 'b', 'a', 'b', 'user', 'a'] : ['a', 'user', 'b', 'a', 'b']);
   assert.equal(report.messages[0].delivery, 'interrupted');
   assert.equal(report.messages[1].text, userText);
   assert.equal(f.records.filter(r => r.type === 'user_message').length, interimOnly ? 2 : 1);
@@ -54,5 +59,6 @@ try {
   console.log(JSON.stringify({ result: 'passed', user_text: userCommands[0].text,
     ai_utterances: f.voices.length, forced_finalizations: recognizer.stopCalls,
     user_messages: f.records.filter(r => r.type === 'user_message').length, recognizer_final_results: !interimOnly,
-    interrupted_callback_ignored: true, provider: health.mode }));
+    interrupted_callback_ignored: true, provider: health.mode,
+    ...(openai ? { ai_responses: f.voices.map(voice => voice.text) } : {}) }));
 } finally { await f.cleanup(); }
