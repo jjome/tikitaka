@@ -44,11 +44,22 @@ Chrome에서 입력이 없다면 주소창에 `http://127.0.0.1:8100/mic`을 입
 
 기본 `demo`는 **고정 대본**이며 유료 LLM을 호출하지 않는다. 실제 AI 대화에는 사용자의 API 키와 사용 가능한 모델 이름이 필요하다. 키는 현재 PowerShell 세션의 `OPENAI_API_KEY` 환경변수에 설정하고, 모델을 명시적으로 지정한다. `.env`는 자동으로 읽지 않는다.
 
+API 키가 없다면 [OpenAI API 키 관리](https://platform.openai.com/api-keys)에서 개발용 키를 발급한다. 키를 채팅이나 코드에 붙여넣는 대신 아래 실행 도구의 비표시 입력란에 넣는다. 도구는 파일에 저장하지 않고 실행하는 서버 프로세스에 전달하며, 종료 시 이전 환경변수로 복원한다. 모델 ID는 계정에서 사용할 수 있는 이름을 지정한다.
+
+```powershell
+.\scripts\start-openai.ps1 -Model "YOUR_AVAILABLE_MODEL" -Check
+.\scripts\start-openai.ps1 -Model "YOUR_AVAILABLE_MODEL" -Language ko -Port 8101
+```
+
+`-Check`는 실제 API에 최대 3회 요청해 민지 → 준호 → 민지 응답을 출력한다. 인사·감정에 맞게 응답하는지, 대화 주제가 바뀌어도 따라오는지, 앞서 말한 이름을 기억하는지 사람이 확인한다. 이 검사는 유료 호출이며 음성 품질 검사는 아니다. 실패 시 대본 데모로 대체하지 않는다. 두 번째 명령은 실제 AI 모드 서버를 실행한다. 실행 중인 데모 서버와 포트를 분리했으므로 Chrome에서 `http://127.0.0.1:8101/`을 열어야 한다.
+
 ```powershell
 .\scripts\start.ps1 -Provider openai -Model "YOUR_AVAILABLE_MODEL" -Language en -Port 8101
 ```
 
 실제 모델 모드는 호출 비용이 발생할 수 있다. 세션마다 실패와 취소를 포함해 최대 60회 호출하고 출력 토큰은 요청당 500으로 제한한다. 정확한 금액 상한은 아직 구현하지 않았으므로 Provider 측 예산 설정을 함께 사용한다. 키를 프런트엔드, 커밋, 채팅에 넣지 않는다.
+
+현재 실제 AI 모드도 브라우저 인식 → GPT 텍스트 응답 → 브라우저 음성 재생 구조다. 자연스러운 대화 내용은 실제 GPT로 검증하고, 음성의 지연·억양·끼어들기는 [Realtime API](https://developers.openai.com/api/docs/guides/realtime)를 적용하는 별도 단계에서 검증한다. Realtime 연결은 아직 구현하지 않았다.
 
 ## 자동 검사
 
