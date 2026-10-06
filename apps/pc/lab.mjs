@@ -23,7 +23,7 @@ function submitText(text, fromInput = false) {
   const existing = fromInput ? outbox.pending().find(item => item.text === text) : null;
   const entry = outbox.enqueue(existing?.id || crypto.randomUUID(), text);
   if (fromInput) inputPendingId = entry.id;
-  send({ type: 'user_message', text: entry.text, client_message_id: entry.id });
+  return send({ type: 'user_message', text: entry.text, client_message_id: entry.id });
 }
 
 function send(command) {
@@ -87,7 +87,8 @@ function updateControls() {
   nodes.pause.disabled = (!active && !busy) || !connected;
   nodes.end.disabled = !session || state === 'ended' || !connected;
   nodes.interrupt.disabled = !active || !connected;
-  nodes.send.disabled = !connected || state === 'ended';
+  nodes.send.disabled = busy || !config;
+  nodes['text-input'].disabled = busy || !config;
   nodes.language.disabled = busy || active;
   nodes.topic.disabled = busy || active || !config;
 }
@@ -259,12 +260,21 @@ nodes['text-start'].addEventListener('click', () => start('text'));
 nodes.pause.addEventListener('click', () => { stopPlayback(); voice.stop(); send({ type: 'pause' }); });
 nodes.end.addEventListener('click', () => { stopPlayback(); voice.stop(); send({ type: 'end' }); });
 nodes.interrupt.addEventListener('click', () => { stopPlayback(); send({ type: 'speech_started' }); });
-nodes['text-form'].addEventListener('submit', event => {
+nodes['text-form'].addEventListener('submit', async event => {
   event.preventDefault();
   const text = nodes['text-input'].value.trim();
-  if (!text || !session) return;
+  if (busy || !text || !config) return;
+  busy = true; updateControls();
   clearError(); stopPlayback();
-  submitText(text, true);
+  try {
+    // A draft is useful before starting and after ending too. Seed the paused
+    // session first, then resume so the first AI reply answers this sentence.
+    await ensureSession();
+    const resume = state === 'paused';
+    if (resume) { mode = 'text'; voice.stop(); }
+    if (submitText(text, true) && resume) send({ type: 'resume' });
+  } catch (error) { showError(error.message); }
+  finally { busy = false; updateControls(); }
 });
 
 function updateTitle() {
