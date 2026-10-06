@@ -112,7 +112,7 @@ test('microphone chosen in the check page is used by conversation; diagnostics o
     assert.equal(report.source, 'Test microphone');
     assert.equal(report.enabled, true);
     assert.equal(report.muted, false);
-    assert.match(report.build, /endpoint/);
+    assert.match(report.build, /^\d{4}-\d{2}-\d{2}-.+/);
     for (const key of ['audio', 'deviceId', 'text', 'token']) assert.equal(key in report, false);
   } finally { await f.cleanup(); }
 });

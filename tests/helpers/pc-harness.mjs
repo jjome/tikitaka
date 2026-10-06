@@ -30,7 +30,7 @@ export async function fixture(createSession, { waitForRecognition = false, micro
         });
       }
     },
-      localStorage: { getItem: () => microphone },
+      localStorage: { getItem: key => key === 'tikitaka_microphone' ? microphone : '' },
       speechSynthesis: { cancel() { cancelled++; }, getVoices: () => [], speak(u) { voices.push(u); } },
       addEventListener(type, handler) { page[type] = handler; } },
     navigator: { mediaDevices: { async getUserMedia(options) { constraints.push(options); return { getTracks: () => [track], getAudioTracks: () => [track] }; } } },

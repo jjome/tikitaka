@@ -6,6 +6,7 @@ __pycache__/
 !.env.example
 .artifact_work/
 .runtime/
+apps/pc/microphone.local.json
 node_modules/
 *.docx
 *.sqlite3*

@@ -1,4 +1,4 @@
-import { BrowserVoice } from './voice.mjs?v=20261002-endpoint2';
+import { BrowserVoice } from './voice.mjs?v=20261007-microphone';
 import { MessageOutbox } from './outbox.mjs';
 
 const nodes = Object.fromEntries(['talk', 'status', 'speaker', 'caption', 'error', 'level', 'build', 'friend-a', 'friend-b']

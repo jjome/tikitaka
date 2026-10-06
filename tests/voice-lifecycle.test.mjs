@@ -16,6 +16,7 @@ test('cancelling an unanswered microphone prompt releases start and closes a lat
     onPreview: noop, onEmpty: noop, onError: noop, onLevel: noop, onStatus: noop });
   try {
     const starting = voice.start('ko');
+    await new Promise(resolve => setTimeout(resolve, 0));
     voice.stop();
     await starting;
     assert.equal(voice.starting, false);

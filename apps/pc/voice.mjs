@@ -1,9 +1,7 @@
 import { TranscriptBuffer, PlaybackGuard, ActivityGate } from './voice-core.mjs?v=20261002-endpoint2';
+import { acquireMicrophone } from './microphone.mjs';
 
-export const VOICE_BUILD = '2026-10-02-endpoint-2';
-export function preferredMicrophone() {
-  try { return window.localStorage?.getItem('tikitaka_microphone') || ''; } catch { return ''; }
-}
+export const VOICE_BUILD = '2026-10-07-microphone-restore';
 
 export class BrowserVoice {
   constructor({ onStart, onActivity, onText, onPreview, onEmpty, onError, onLevel, onStatus, onDiagnostics = () => {} }) {
@@ -37,15 +35,13 @@ export class BrowserVoice {
     this.diagnostics = { build: VOICE_BUILD, peak: 0, frames: 0, speech_starts: 0, results: 0, recognition_error: '' };
     this.lastDiagnostics = -Infinity;
     try {
-      const deviceId = preferredMicrophone();
-      const capture = navigator.mediaDevices.getUserMedia({ audio: {
-        ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
+      const capture = acquireMicrophone({
         echoCancellation: true, noiseSuppression: true, autoGainControl: true,
-      } });
+      }, () => generation === this.generation);
       // A permission prompt may stay pending forever. Cancellation must release the UI,
       // and a stream granted after cancellation must be closed immediately.
       capture.then(stream => {
-        if (generation !== this.generation) stream.getTracks().forEach(t => t.stop());
+        if (stream && generation !== this.generation) stream.getTracks().forEach(t => t.stop());
       }).catch(() => {});
       const cancelled = new Promise(resolve => { this.cancelStart = () => resolve(null); });
       const stream = await Promise.race([capture, cancelled]);

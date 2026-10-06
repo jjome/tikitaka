@@ -1,6 +1,8 @@
+import { acquireMicrophone, rememberMicrophone } from './microphone.mjs';
+
 const device = document.getElementById('device'), button = document.getElementById('check');
 const meter = document.getElementById('level'), result = document.getElementById('result'), source = document.getElementById('source');
-let resources = null, intent = 0, active = false, cancel = null, savedDevice = '';
+let resources = null, intent = 0, active = false, cancel = null, savedDevice = '', explicitSelection = false, deviceListVersion = 0;
 let diagnosticSession = null;
 try { savedDevice = localStorage.getItem('tikitaka_microphone') || ''; } catch {}
 
@@ -38,12 +40,18 @@ function stop() {
   }
   meter.value = 0; button.textContent = '마이크 확인 시작';
 }
-async function listDevices(selected) {
+async function listDevices(selected, label = '') {
+  const version = ++deviceListVersion;
   const inputs = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'audioinput');
+  if (version !== deviceListVersion) return;
   device.replaceChildren(new Option('Chrome 기본 마이크', ''), ...inputs
     .filter(d => !['default', 'communications'].includes(d.deviceId))
     .map((d, i) => new Option(d.label || `마이크 ${i + 1}`, d.deviceId)));
   if ([...device.options].some(option => option.value === selected)) device.value = selected;
+  if (label) {
+    const matched = inputs.filter(d => !['default', 'communications'].includes(d.deviceId) && d.label === label);
+    if (matched.length === 1) device.value = matched[0].deviceId;
+  }
 }
 async function start() {
   stop();
@@ -52,11 +60,10 @@ async function start() {
   const selected = device.value;
   try {
     if (!navigator.mediaDevices?.getUserMedia) throw new Error('이 브라우저에서 마이크를 사용할 수 없습니다.');
-    const capture = navigator.mediaDevices.getUserMedia({ audio: {
-      ...(selected ? { deviceId: { exact: selected } } : {}),
+    const capture = acquireMicrophone({
       echoCancellation: false, noiseSuppression: false, autoGainControl: false,
-    } });
-    capture.then(stream => { if (attempt !== intent) stream.getTracks().forEach(track => track.stop()); }).catch(() => {});
+    }, () => attempt === intent, explicitSelection ? selected : undefined);
+    capture.then(stream => { if (stream && attempt !== intent) stream.getTracks().forEach(track => track.stop()); }).catch(() => {});
     const cancelled = new Promise(resolve => { cancel = () => resolve(null); });
     const stream = await Promise.race([capture, cancelled]);
     if (!stream || attempt !== intent) return;
@@ -69,6 +76,7 @@ async function start() {
     r.sink = r.context.createGain(); r.sink.gain.value = 0;
     r.source.connect(r.analyser); r.analyser.connect(r.sink); r.sink.connect(r.context.destination);
     const values = new Float32Array(r.analyser.fftSize), track = stream.getAudioTracks()[0];
+    if (explicitSelection && selected && track.label) rememberMicrophone(selected, track.label);
     const poll = () => {
       if (attempt !== intent) return;
       r.analyser.getFloatTimeDomainData(values);
@@ -82,7 +90,7 @@ async function start() {
     };
     poll();
     prepareReportSession();
-    listDevices(selected).catch(() => {});
+    listDevices(selected, track.label).catch(() => {});
   } catch (error) {
     if (attempt !== intent) return;
     stop();
@@ -93,7 +101,8 @@ async function start() {
 }
 button.addEventListener('click', () => { if (active) { stop(); result.textContent = '점검 종료'; } else start(); });
 device.addEventListener('change', () => {
-  try { localStorage.setItem('tikitaka_microphone', device.value); } catch {}
+  explicitSelection = true; deviceListVersion++;
+  rememberMicrophone(device.value, device.selectedOptions[0]?.textContent || '');
   if (active) start();
 });
 window.addEventListener('pagehide', stop);
