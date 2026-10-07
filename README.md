@@ -32,7 +32,7 @@ Python 3.12 이상이 필요하다. Windows PowerShell에서 프로젝트 폴더
 
 ### 음성 인식 연결 오류
 
-내장 미리보기 브라우저에서는 음성 인식 API가 있어도 인식 서비스 연결에 실패할 수 있다. 2026-10-02 내장 브라우저에서 `network` 오류를 확인했다. 별도 Google Chrome 창의 주소창에 `http://127.0.0.1:8100/`을 입력하고 대화를 시작한다. 링크를 클릭하면 다시 내장 브라우저에서 열릴 수 있으므로 Chrome 주소창에 직접 입력한다.
+대본 데모의 브라우저 음성 인식은 내장 미리보기에서 `network` 오류가 날 수 있다. 실제 AI 모드는 OpenAI 음성 API를 사용하므로 이 브라우저 인식 서비스에 의존하지 않는다. 데모 음성을 시험할 때는 별도 Google Chrome 창의 주소창에 `http://127.0.0.1:8100/`을 입력한다.
 
 Chrome에서도 같은 오류가 나면 Chrome의 마이크 권한과 인터넷 연결을 확인한다. 브라우저 음성 인식 서비스 연결과 로컬 앱 서버 연결은 서로 다르다. 앱은 인식 시작 이벤트를 확인한 뒤 AI 대화를 시작하며, 시작 실패 시 마이크를 반환한다. Android 출시에는 전용 음성 어댑터를 사용한다.
 
@@ -64,7 +64,17 @@ API 키가 없다면 [OpenAI API 키 관리](https://platform.openai.com/api-key
 
 실제 모델 모드는 호출 비용이 발생할 수 있다. 세션마다 실패와 취소를 포함해 최대 60회 호출하고 출력 토큰은 요청당 500으로 제한한다. 정확한 금액 상한은 아직 구현하지 않았으므로 Provider 측 예산 설정을 함께 사용한다. 키를 프런트엔드, 커밋, 채팅에 넣지 않는다.
 
-현재 실제 AI 모드도 브라우저 인식 → GPT 텍스트 응답 → 브라우저 음성 재생 구조다. 자연스러운 대화 내용은 실제 GPT로 검증하고, 음성의 지연·억양·끼어들기는 [Realtime API](https://developers.openai.com/api/docs/guides/realtime)를 적용하는 별도 단계에서 검증한다. Realtime 연결은 아직 구현하지 않았다.
+실제 AI 모드는 선택한 마이크 → AudioWorklet PCM 수집 → 발화 종료 감지 → OpenAI 전사 → GPT 응답 → OpenAI 음성 생성·재생 구조다. 두 AI는 서로 다른 목소리를 사용하고, 사용자가 말하면 로컬에서 먼저 재생과 음성 다운로드를 취소한다. 소리가 끝난 뒤 약 1초 후 인식 요청을 보내므로 Realtime 음성 스트리밍과는 응답 지연이 다르다. Realtime 연결은 아직 구현하지 않았다.
+
+음성 API까지 확인하고 서버를 실행하려면 다음을 사용한다. `-CheckAudio`는 고정된 합성 점검 문장으로 음성 생성·인식을 각 1회 호출하고 `.runtime/audio-check.json` 및 `.runtime/audio-check.wav`를 만든다. 사람의 마이크를 녹음하는 검사는 아니다. `-Reload`는 백엔드 코드 수정 시 키를 재입력하지 않고 개발 서버를 다시 불러온다.
+
+```powershell
+.\scripts\start-openai.ps1 -Model "YOUR_AVAILABLE_MODEL" -Port 8103 -CheckAudio -Reload
+```
+
+서버 `/api/health`의 `voice_transport`가 `api`인 것을 확인한다. 원시 마이크 음성은 로컬 서버 메모리에서만 처리하며 DB나 파일에 저장하지 않는다. 한 음성 조각은 최대 약 20초, 세션당 전사·음성 생성 요청은 각각 최대 60회다. 생성·전사 실패도 요청 수에 포함된다. 모델 기본값은 `gpt-4o-mini-transcribe`, `gpt-4o-mini-tts`이며 서버 환경변수 `TIKITAKA_TRANSCRIPTION_MODEL`, `TIKITAKA_SPEECH_MODEL`로 지정할 수 있다.
+
+`/assets/audio-test.html`은 개발용 음성 연결 점검 화면이다. 위 합성 WAV를 선택하면 브라우저의 실제 오디오 처리 경로에 파일을 흘려보내 첫 AI 음성에 끼어들고, 인식한 문장을 GPT에 보내 준호·민지 답변의 재생까지 시험한다. 실제 API를 사용하고 AI 응답 3개 후 자동 종료한다. 합성 입력 검사와 실제 마이크·스피커 검사는 구분한다.
 
 ## 자동 검사
 

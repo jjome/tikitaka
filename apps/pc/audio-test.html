@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Tikitaka · 음성 연결 자동 점검</title>
+<style>body{max-width:900px;margin:40px auto;padding:0 24px;font:16px/1.7 system-ui;color:#24463c;background:#f6f7f3}button,input{font:inherit;padding:12px;margin:10px 0}button{background:#284b3d;color:white;border:0;border-radius:12px}pre{white-space:pre-wrap;background:white;padding:24px;border-radius:12px}a{color:inherit}</style>
+<script type="module" src="/assets/audio-test.mjs"></script></head><body>
+<h1>음성 연결 자동 점검</h1>
+<p>개발용 · 합성 음성 파일을 마이크 입력처럼 흘려보내 음성 인식, 끼어들기, GPT 응답과 두 AI 목소리를 점검합니다. 실제 마이크 검사는 별도입니다.</p>
+<p>점검 문장: “준호, 나는 겨울이 더 좋아. 여름은 너무 더워.”<br>실제 API 서버에서는 유료 음성 API와 GPT를 호출합니다. 첫 AI 응답을 중단하고 이어지는 응답 2개를 재생하면 자동 종료합니다.</p>
+<label for="fixture">합성 음성 WAV 파일</label><br><input id="fixture" type="file" accept="audio/wav,.wav"><br>
+<button id="run">음성 연결 시험</button> <button id="stop" disabled>중지</button>
+<p id="status" role="status">파일을 선택해주세요.</p><pre id="report">점검 준비</pre>
+<a href="/">대화 화면으로 돌아가기</a>
+</body></html>

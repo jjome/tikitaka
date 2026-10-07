@@ -3,7 +3,9 @@
     [ValidateSet('ko', 'en')][string]$Language = 'ko',
     [ValidateRange(1024, 65535)][int]$Port = 8100,
     [switch]$Check,
-    [switch]$CheckAndStart
+    [switch]$CheckAndStart,
+    [switch]$CheckAudio,
+    [switch]$Reload
 )
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
@@ -28,6 +30,10 @@ try {
     $env:TIKITAKA_PROVIDER = 'openai'
     $env:TIKITAKA_MODEL = $Model.Trim()
     $env:TIKITAKA_LANGUAGE = $Language
+    if ($CheckAudio) {
+        & $venvPython -X utf8 (Join-Path $PSScriptRoot 'check_audio.py')
+        if ($LASTEXITCODE -ne 0) { throw 'Audio API check failed. Server was not started.' }
+    }
     if ($Check -or $CheckAndStart) {
         $reportDirectory = Join-Path $projectRoot '.runtime'
         New-Item -ItemType Directory -Force -Path $reportDirectory | Out-Null
@@ -36,7 +42,7 @@ try {
         if ($LASTEXITCODE -ne 0) { throw '실제 API 검사가 실패했습니다. 대본 데모로 전환하지 않습니다.' }
     }
     if (-not $Check -or $CheckAndStart) {
-        & (Join-Path $PSScriptRoot 'start.ps1') -Provider openai -Model $env:TIKITAKA_MODEL -Language $Language -Port $Port
+        & (Join-Path $PSScriptRoot 'start.ps1') -Provider openai -Model $env:TIKITAKA_MODEL -Language $Language -Port $Port -Reload:$Reload
     }
 } finally {
     $env:OPENAI_API_KEY = $previousKey

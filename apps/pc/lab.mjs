@@ -1,5 +1,5 @@
 // Internal diagnostics, intentionally separate from the one-button product screen.
-import { BrowserVoice } from './voice.mjs?v=20261007-microphone';
+import { ConversationVoice as BrowserVoice } from './conversation-voice.mjs';
 import { MessageOutbox } from './outbox.mjs';
 
 const $ = id => document.getElementById(id);
@@ -44,6 +44,11 @@ function stopPlayback() {
 }
 
 const voice = new BrowserVoice({
+  onDiagnostics: report => {
+    if (session) fetch(`/api/sessions/${session.id}/audio-diagnostics`, { method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Session-Token': session.token },
+      body: JSON.stringify(report) }).catch(() => {});
+  },
   onStart: () => {
     stopPlayback();
     send({ type: 'speech_started' });
@@ -159,7 +164,7 @@ function playMessage(message) {
   if (mode === 'voice' && (!voice.running || voice.userSpeaking)) return;
   const finish = () => send({ type: 'playback_finished', message_id: message.id, revision: message.revision });
   if (mode === 'voice') {
-    voice.play(message, finish, () => send({ type: 'playback_failed', message_id: message.id, revision: message.revision }));
+    voice.play(message, finish, error => { showError(error || 'AI 음성을 재생하지 못했습니다.'); send({ type: 'playback_failed', message_id: message.id, revision: message.revision }); });
   } else {
     const token = ++diagnosticToken;
     clearTimeout(diagnosticTimer);
@@ -246,6 +251,7 @@ async function start(selectedMode) {
     await ensureSession();
     mode = selectedMode;
     if (mode === 'voice') {
+      voice.configure(config, session);
       await voice.start(session.language);
       if (!voice.running) return;
     }
@@ -322,6 +328,9 @@ async function init() {
     const response = await fetch('/api/config');
     if (!response.ok) throw new Error('서버 설정을 불러오지 못했습니다.');
     config = await response.json();
+    $('voice-note').textContent = config.voice_transport === 'api'
+      ? '마이크 음성 인식과 AI 생성 음성에 OpenAI API를 사용합니다. 이어폰을 쓰면 끼어들기를 시험하기 편해요.'
+      : '음성 인식은 브라우저 서비스로 처리될 수 있어요. 이어폰을 쓰면 끼어들기를 시험하기 편해요.';
     nodes.mode.textContent = config.mode === 'demo' ? '대본 데모' : '실제 AI';
     nodes['demo-note'].textContent = config.mode === 'demo'
       ? '대본 기반 데모로 대화 흐름을 시험해요. 실제 AI 대화는 서버 설정으로 연결할 수 있어요.'

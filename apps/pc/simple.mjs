@@ -1,4 +1,4 @@
-import { BrowserVoice } from './voice.mjs?v=20261007-microphone';
+import { ConversationVoice as BrowserVoice } from './conversation-voice.mjs';
 import { MessageOutbox } from './outbox.mjs';
 
 const nodes = Object.fromEntries(['talk', 'status', 'speaker', 'caption', 'error', 'level', 'build', 'friend-a', 'friend-b']
@@ -108,7 +108,7 @@ async function connect(signal) {
         caption(message);
         voice.play(message,
           () => send({ type: 'playback_finished', message_id: message.id, revision: message.revision }),
-          () => send({ type: 'playback_failed', message_id: message.id, revision: message.revision }));
+          error => { showError(error || 'AI 음성을 재생하지 못했습니다.'); send({ type: 'playback_failed', message_id: message.id, revision: message.revision }); });
       }
     };
     ws.onerror = () => fail('서버에 연결하지 못했습니다. 다시 시작해주세요.');
@@ -129,7 +129,8 @@ async function loadConfig() {
   const response = await fetch('/api/config');
   if (!response.ok) throw new Error('대화를 준비하지 못했습니다. 다시 시작해주세요.');
   config = await response.json();
-  nodes.build.textContent = config.mode === 'demo' ? '개발용 · 대본 데모' : '개발용 · AI 연결';
+  nodes.build.textContent = config.mode === 'demo' ? '개발용 · 대본 데모' :
+    config.voice_transport === 'api' ? '개발용 · AI 생성 음성' : '개발용 · AI 연결';
 }
 async function ensureSession(signal) {
   if (session && session.language === config.default_language) {
@@ -164,6 +165,7 @@ async function start() {
     if (attempt !== intent) return;
     await ensureSession(controller.signal);
     if (attempt !== intent) return;
+    voice.configure(config, session);
     await voice.start(session.language);
     if (attempt !== intent) return;
     if (!voice.running) { stop('pause'); return; }
