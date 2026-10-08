@@ -7,8 +7,10 @@
 - 8103 실제 API 서버에서 합성 TTS→STT 통과.
 - Codex 내장 브라우저에서 한국어·영어 각각 실제 AudioWorklet 입력 → OpenAI 전사 → GPT 응답 → OpenAI TTS 재생 통과. 첫 민지 발화 중단 후 준호·민지 재생 완료. 두 결과 모두 provider=openai, speakers=a,b,a, played=b,a, interruptions=1. 중단된 음성은 재개되지 않았다.
 - 영어 합성 입력은 “Junho, I prefer winter. Summer is too hot.”으로 정확히 전사되었다.
-- Python 48개, JavaScript 45개 검사 통과. Android 소스 컴파일 및 JVM 검사 11개 통과(음성 분절, HTTP/WebSocket 제어, 취소·늦은 응답, 권한·단일 버튼 화면). 물리 마이크, 스피커 에코와 Android 기기는 아직 검증하지 않았다.
+- Python 55개, JavaScript 45개 검사 통과. Android 소스 컴파일 및 JVM 검사 12개 통과(음성 분절, HTTP/WebSocket 제어, 취소·늦은 응답, 권한·단일 버튼 화면). 물리 마이크, 스피커 에코와 Android 기기는 아직 검증하지 않았다.
 - GitHub Actions가 사전 설치된 SDK로 Android 테스트·lint·APK 빌드를 실행하도록 구성했다. 빌드 결과는 확인 후 기록한다.
+- 최초 APK 컴파일·테스트는 통과했으나 lint에서 개발용 네트워크 설정의 속성 누락을 발견해 수정했다. 권한 승인 시점에 따른 시작 누락도 회귀 검사로 막았다.
+- 세션 7일 보관, 소유 토큰으로 즉시 삭제, 삭제 시 처리 중 음성 요청 취소, 사용하지 않는 대화 컨트롤러의 메모리 해제를 구현했다.
 
 ## 이번 구현 순서
 

@@ -5,6 +5,7 @@
     <uses-feature android:name="android.hardware.microphone" android:required="true" />
     <application android:label="Tikitaka" android:theme="@style/AppTheme"
         android:icon="@drawable/ic_launcher" android:allowBackup="false"
+        android:fullBackupContent="false" android:dataExtractionRules="@xml/data_extraction_rules"
         android:usesCleartextTraffic="false" android:supportsRtl="true">
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>

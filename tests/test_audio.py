@@ -1,3 +1,4 @@
+import asyncio
 import io
 import json
 import unittest
@@ -77,6 +78,28 @@ class AudioAPITests(unittest.TestCase):
 
 
 class AudioGatewayTests(unittest.IsolatedAsyncioTestCase):
+    async def test_deleting_active_session_cancels_pending_audio_provider_request(self):
+        started, cancelled = asyncio.Event(), asyncio.Event()
+        class SlowAudio(FakeAudio):
+            async def transcribe(self, data, language):
+                started.set()
+                try:
+                    await asyncio.Future()
+                finally:
+                    cancelled.set()
+        app = create_app(':memory:', DemoGateway(.001), audio_gateway=SlowAudio())
+        async with app.router.lifespan_context(app):
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test') as client:
+                session = (await client.post('/api/sessions', json={})).json()
+                route = f'/api/sessions/{session["id"]}'
+                headers = {'X-Session-Token': session['token'], 'Content-Type': 'audio/wav'}
+                app.state.engines[session['id']].state = 'listening'
+                pending = asyncio.create_task(client.post(route + '/transcriptions', content=wav(), headers=headers))
+                await asyncio.wait_for(started.wait(), 2)
+                self.assertEqual((await client.delete(route, headers=headers)).status_code, 204)
+                self.assertEqual((await asyncio.wait_for(pending, 2)).status_code, 409)
+                self.assertTrue(cancelled.is_set())
+
     async def test_transcription_multipart_and_speaker_specific_speech(self):
         requests = []
         def handler(request):

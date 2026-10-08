@@ -27,7 +27,7 @@ public final class MainActivity extends Activity implements ConversationClient.V
     private TextView status, caption, speaker, error;
     private ProgressBar level;
     private Friends friends;
-    private boolean resumed;
+    private boolean resumed, permissionRequested, startAfterPermission;
 
     @Override public void onCreate(Bundle saved) {
         super.onCreate(saved);
@@ -67,6 +67,7 @@ public final class MainActivity extends Activity implements ConversationClient.V
         talk.setOnClickListener(v -> {
             if (conversation.isActive()) { conversation.stop(); return; }
             if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                permissionRequested = true;
                 requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, MICROPHONE_PERMISSION);
             } else conversation.start();
         });
@@ -78,15 +79,20 @@ public final class MainActivity extends Activity implements ConversationClient.V
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(-1, -2); params.topMargin = dp(top); parent.addView(child, params);
     }
     private int dp(float size) { return Math.round(size * getResources().getDisplayMetrics().density); }
-    @Override protected void onResume() { super.onResume(); resumed = true; }
+    @Override protected void onResume() { super.onResume(); resumed = true; startIfPermissionReady(); }
+    private void startIfPermissionReady() {
+        if (resumed && startAfterPermission) { startAfterPermission = false; conversation.start(); }
+    }
     @Override protected void onPause() { resumed = false; if (conversation != null) conversation.stop(); super.onPause(); }
     @Override protected void onDestroy() { if (conversation != null) conversation.dispose(); super.onDestroy(); }
     @Override public void onRequestPermissionsResult(int request, String[] permissions, int[] results) {
         super.onRequestPermissionsResult(request, permissions, results);
         if (request != MICROPHONE_PERMISSION) return;
         if (results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED) {
-            if (resumed) conversation.start();
-        } else error("대화하려면 마이크 권한이 필요해요. 기기 설정에서 Tikitaka의 마이크를 허용해주세요.");
+            startAfterPermission = permissionRequested;
+            startIfPermissionReady();
+        } else { startAfterPermission = false; error("대화하려면 마이크 권한이 필요해요. 기기 설정에서 Tikitaka의 마이크를 허용해주세요."); }
+        permissionRequested = false;
     }
     @Override public void state(boolean active, String message) {
         talk.setText(active ? "대화 끝내기" : "대화 시작"); status.setText(message);

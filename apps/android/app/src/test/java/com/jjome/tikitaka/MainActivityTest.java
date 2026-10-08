@@ -47,4 +47,17 @@ public class MainActivityTest {
             assertTrue(button.isEnabled()); assertEquals("대화 시작", button.getText().toString());
         }
     }
+    @Test public void permissionGrantedBeforeResumeStartsWithoutAnotherTap() {
+        Shadows.shadowOf((Application)RuntimeEnvironment.getApplication()).denyPermissions(Manifest.permission.RECORD_AUDIO);
+        try (ActivityController<MainActivity> controller = Robolectric.buildActivity(MainActivity.class).setup()) {
+            MainActivity activity = controller.get();
+            Button button = (Button)descendants(activity.getWindow().getDecorView()).stream().filter(v -> v instanceof Button).findFirst().get();
+            button.performClick(); controller.pause();
+            Shadows.shadowOf((Application)RuntimeEnvironment.getApplication()).grantPermissions(Manifest.permission.RECORD_AUDIO);
+            activity.onRequestPermissionsResult(10, new String[]{Manifest.permission.RECORD_AUDIO}, new int[]{0});
+            assertEquals("대화 시작", button.getText().toString());
+            controller.resume();
+            assertEquals("대화 끝내기", button.getText().toString());
+        }
+    }
 }

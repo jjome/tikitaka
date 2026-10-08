@@ -31,7 +31,8 @@ final class NativeAudio implements VoiceIO {
     private final AudioAttributes attributes = new AudioAttributes.Builder()
         .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION).setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build();
     private volatile boolean running;
-    private int generation, playbackGeneration, previousMode;
+    private volatile int generation;
+    private int playbackGeneration, previousMode;
     private AudioRecord recorder;
     private PcmTurns turns;
     private MediaPlayer player;
@@ -70,8 +71,9 @@ final class NativeAudio implements VoiceIO {
         if (manager.requestAudioFocus(focus) != AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
             focus = null; throw new IllegalStateException("마이크와 소리를 사용할 수 없습니다. 잠시 후 다시 시작해주세요.");
         }
-        previousMode = manager.getMode(); manager.setMode(AudioManager.MODE_IN_COMMUNICATION);
+        previousMode = manager.getMode();
         try {
+            manager.setMode(AudioManager.MODE_IN_COMMUNICATION);
             int minimum = AudioRecord.getMinBufferSize(24000, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT);
             if (minimum <= 0) throw new IllegalStateException("이 기기의 마이크 형식을 사용할 수 없습니다.");
             recorder = new AudioRecord(MediaRecorder.AudioSource.VOICE_COMMUNICATION, 24000,
@@ -100,8 +102,11 @@ final class NativeAudio implements VoiceIO {
     private void captureLoop(AudioRecord capture, PcmTurns segmentation, int epoch) {
         AcousticEchoCanceler echo = null; NoiseSuppressor noise = null;
         try {
-            if (AcousticEchoCanceler.isAvailable()) { echo = AcousticEchoCanceler.create(capture.getAudioSessionId()); if (echo != null) echo.setEnabled(true); }
-            if (NoiseSuppressor.isAvailable()) { noise = NoiseSuppressor.create(capture.getAudioSessionId()); if (noise != null) noise.setEnabled(true); }
+            // Some devices advertise an effect but cannot allocate it. Capture must still work.
+            try { if (AcousticEchoCanceler.isAvailable()) { echo = AcousticEchoCanceler.create(capture.getAudioSessionId()); if (echo != null) echo.setEnabled(true); } }
+            catch (RuntimeException unavailable) { /* Optional device effect. */ }
+            try { if (NoiseSuppressor.isAvailable()) { noise = NoiseSuppressor.create(capture.getAudioSessionId()); if (noise != null) noise.setEnabled(true); } }
+            catch (RuntimeException unavailable) { /* Optional device effect. */ }
             short[] samples = new short[480]; int ticks = 0;
             while (running && epoch == generation) {
                 int count = capture.read(samples, 0, samples.length, AudioRecord.READ_BLOCKING);

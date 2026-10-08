@@ -26,6 +26,33 @@ class APITests(unittest.TestCase):
         self.assertEqual(result.json()['state'], 'paused')
         self.assertNotIn('token', result.json())
 
+    def test_session_delete_requires_owner_token_and_removes_diagnostics(self):
+        s = self.session()
+        route = f'/api/sessions/{s["id"]}'
+        self.assertEqual(self.client.delete(route).status_code, 404)
+        self.client.app.state.repository.save_audio_diagnostics(s['id'], {'peak': .1})
+        headers = {'X-Session-Token': s['token']}
+        self.assertEqual(self.client.delete(route, headers=headers).status_code, 204)
+        self.assertEqual(self.client.get(route, headers=headers).status_code, 404)
+        self.assertEqual(self.client.post(route + '/speech/old', headers=headers).status_code, 404)
+        self.assertNotIn(s['id'], self.client.app.state.engines)
+        self.assertEqual(self.client.app.state.repository.db.execute('SELECT count(*) FROM audio_diagnostics').fetchone()[0], 0)
+
+    def test_inactive_controllers_are_released_without_losing_session(self):
+        first = self.session()
+        for _ in range(101):
+            self.assertEqual(self.client.post('/api/sessions', json={}).status_code, 201)
+        self.assertLessEqual(len(self.client.app.state.engines), 2)
+        restored = self.client.get(f'/api/sessions/{first["id"]}', headers={'X-Session-Token': first['token']})
+        self.assertEqual(restored.status_code, 200)
+        self.assertEqual(restored.json()['state'], 'paused')
+
+    def test_expired_session_is_inaccessible_even_before_sweeper(self):
+        s = self.session()
+        repo = self.client.app.state.repository
+        repo.db.execute('UPDATE sessions SET expires_at=0 WHERE id=?', (s['id'],)); repo.db.commit()
+        self.assertEqual(self.client.get(f'/api/sessions/{s["id"]}', headers={'X-Session-Token': s['token']}).status_code, 404)
+
     def test_unknown_topic_and_language_rejected(self):
         for body in ({'topic_id': 'unknown'}, {'language': 'ja'}):
             self.assertEqual(self.client.post('/api/sessions', json=body).status_code, 422)

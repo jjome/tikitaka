@@ -46,6 +46,26 @@ def create_app(db_path=None, gateway=None, policy=None, audio_gateway=None):
     engines = {}
     audio_busy = set()
 
+    async def expire_sessions():
+        for sid in app.state.repository.expired_ids():
+            engine = engines.pop(sid, None)
+            if engine:
+                await engine.close()
+            app.state.repository.delete(sid)
+
+    async def cleanup_loop():
+        while True:
+            await asyncio.sleep(60)
+            await expire_sessions()
+
+    async def release_idle_engines():
+        # Snapshots remain restorable; only inactive controllers leave memory.
+        for sid, engine in list(engines.items()):
+            if ((engine.state == 'ended' or engine.state == 'paused' and engine._sink is None)
+                    and not any(key[0] == sid for key in audio_busy)):
+                await engine.close()
+                engines.pop(sid, None)
+
     @asynccontextmanager
     async def lifespan(app):
         app.state.repository = SessionRepository(db_path or os.getenv('TIKITAKA_DB', str(ROOT / '.runtime/sessions.sqlite3')))
@@ -53,20 +73,26 @@ def create_app(db_path=None, gateway=None, policy=None, audio_gateway=None):
         app.state.audio = audio_gateway or (OpenAIAudio(os.getenv('OPENAI_API_KEY'))
             if app.state.gateway.mode == 'openai' and os.getenv('OPENAI_API_KEY') else None)
         app.state.engines = engines
-        yield
-        for engine in engines.values():
-            await engine.close()
-        await app.state.gateway.close()
-        if app.state.audio:
-            await app.state.audio.close()
-        app.state.repository.close()
+        await expire_sessions()
+        cleanup = asyncio.create_task(cleanup_loop())
+        try:
+            yield
+        finally:
+            cleanup.cancel()
+            await asyncio.gather(cleanup, return_exceptions=True)
+            for engine in engines.values():
+                await engine.close()
+            await app.state.gateway.close()
+            if app.state.audio:
+                await app.state.audio.close()
+            app.state.repository.close()
 
-    app = FastAPI(title='Tikitaka PC Voice Prototype', lifespan=lifespan)
+    app = FastAPI(title='Tikitaka Voice API', lifespan=lifespan)
 
     @app.middleware('http')
     async def development_cache(request, call_next):
         response = await call_next(request)
-        if request.url.path in {'/', '/lab', '/mic'} or request.url.path.startswith('/assets/'):
+        if request.url.path in {'/', '/lab', '/mic'} or request.url.path.startswith(('/assets/', '/api/')):
             response.headers['Cache-Control'] = 'no-store'
         return response
 
@@ -76,6 +102,10 @@ def create_app(db_path=None, gateway=None, policy=None, audio_gateway=None):
             raise HTTPException(404, '세션을 찾을 수 없습니다.')
         if session_id not in engines:
             saved = repo.load(session_id)
+            if saved is None:
+                raise HTTPException(404, '세션을 찾을 수 없습니다.')
+            if len(engines) >= 100:
+                raise HTTPException(429, '현재 대화가 많습니다. 잠시 후 다시 시도해주세요.')
             engine = ConversationEngine(session_id, saved['topic_id'], saved['language'],
                                         app.state.gateway, repo, policy, restored=saved)
             engines[session_id] = engine
@@ -101,8 +131,9 @@ def create_app(db_path=None, gateway=None, policy=None, audio_gateway=None):
         if topic_id not in TOPICS:
             raise HTTPException(422, '지원하지 않는 주제입니다.')
         # This endpoint is for loopback development, not public anonymous hosting.
+        await release_idle_engines()
         if len(engines) >= 100:
-            raise HTTPException(429, '개발 세션 상한에 도달했습니다. 서버를 다시 시작하세요.')
+            raise HTTPException(429, '현재 대화가 많습니다. 잠시 후 다시 시도해주세요.')
         sid, token = uuid.uuid4().hex, secrets.token_urlsafe(32)
         engine = ConversationEngine(sid, topic_id, body.language, app.state.gateway,
                                     app.state.repository, policy)
@@ -113,6 +144,15 @@ def create_app(db_path=None, gateway=None, policy=None, audio_gateway=None):
     @app.get('/api/sessions/{session_id}')
     async def get_session(session_id: str, x_session_token: str | None = Header(default=None)):
         return authorized_engine(session_id, x_session_token).snapshot()
+
+    @app.delete('/api/sessions/{session_id}', status_code=204)
+    async def delete_session(session_id: str, x_session_token: str | None = Header(default=None)):
+        engine = authorized_engine(session_id, x_session_token)
+        if engine.state != 'ended':
+            await engine.handle({'type': 'end'})
+        await engine.close()
+        engines.pop(session_id, None)
+        app.state.repository.delete(session_id)
 
     @app.post('/api/sessions/{session_id}/audio-diagnostics', status_code=204)
     async def audio_diagnostics(session_id: str, body: AudioDiagnostics,
@@ -132,11 +172,13 @@ def create_app(db_path=None, gateway=None, policy=None, audio_gateway=None):
             raise HTTPException(429, '음성 요청 상한에 도달했습니다. 새 대화를 시작해주세요.')
         return engine
 
-    async def connected_audio(request, operation):
+    async def connected_audio(request, operation, engine):
         task = asyncio.create_task(operation)
         try:
             while True:
                 done, _ = await asyncio.wait({task}, timeout=.2)
+                if engine.state in {'paused', 'ended'}:
+                    raise HTTPException(409, '대화가 정지되어 있습니다.')
                 if done:
                     return await task
                 if await request.is_disconnected():
@@ -162,7 +204,7 @@ def create_app(db_path=None, gateway=None, policy=None, audio_gateway=None):
             # Count failed provider attempts too; do not persist the audio itself.
             engine.stats['transcriptions'] = engine.stats.get('transcriptions', 0) + 1
             engine._save()
-            text = await connected_audio(request, app.state.audio.transcribe(bytes(data), engine.language))
+            text = await connected_audio(request, app.state.audio.transcribe(bytes(data), engine.language), engine)
             return {'text': text}
         except DomainError as exc:
             raise HTTPException(502, str(exc)) from None
@@ -179,7 +221,7 @@ def create_app(db_path=None, gateway=None, policy=None, audio_gateway=None):
         try:
             engine.stats['speech_calls'] = engine.stats.get('speech_calls', 0) + 1
             engine._save()
-            data = await connected_audio(request, app.state.audio.speak(message.text, message.speaker, engine.language))
+            data = await connected_audio(request, app.state.audio.speak(message.text, message.speaker, engine.language), engine)
             if message.delivery != 'pending' or engine.state != 'speaking':
                 raise HTTPException(409, '중단된 AI 응답입니다.')
             return Response(data, media_type='audio/mpeg', headers={'Cache-Control': 'no-store'})
