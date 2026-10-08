@@ -10,7 +10,7 @@ from unittest.mock import patch
 import wave
 
 from backend.app.audio import validate_wav
-from scripts.check_audio import main, normalize_wav
+from scripts.check_audio import main, normalize_wav, matches_test_sentence
 
 
 def streaming_wav():
@@ -25,6 +25,11 @@ def streaming_wav():
 
 
 class AudioCheckTests(unittest.IsolatedAsyncioTestCase):
+    def test_connection_check_allows_name_spelling_variation_but_not_unrelated_text(self):
+        self.assertTrue(matches_test_sentence('분호, 나는 겨울이 더 좋아. 여름은 너무 더워.'))
+        self.assertFalse(matches_test_sentence(''))
+        self.assertFalse(matches_test_sentence('안녕하세요.'))
+
     def test_streaming_length_sentinels_are_replaced_without_overflow(self):
         normalized = normalize_wav(streaming_wav())
         validate_wav(normalized)
@@ -44,7 +49,7 @@ class AudioCheckTests(unittest.IsolatedAsyncioTestCase):
             async def transcribe(self, data, language):
                 self.calls += 1
                 validate_wav(data)
-                return '준호, 나는 겨울이 더 좋아.'
+                return '분호, 나는 겨울이 더 좋아. 여름은 너무 더워.'
             async def close(self): self.closed = True
         provider = Provider()
         with tempfile.TemporaryDirectory() as directory, \
