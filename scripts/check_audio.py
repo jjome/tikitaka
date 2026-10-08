@@ -12,27 +12,35 @@ from backend.app.audio import OpenAIAudio
 from backend.app.domain import DomainError
 
 
-async def main():
+def normalize_wav(raw):
+    """Replace streaming length sentinels with the size actually received."""
+    with wave.open(io.BytesIO(raw), 'rb') as reader:
+        params = reader.getparams()
+        frames = reader.readframes(reader.getnframes())
+    output = io.BytesIO()
+    with wave.open(output, 'wb') as writer:
+        # Do not copy the provider's unknown/placeholder frame count. Python's
+        # WAV writer can overflow its RIFF length before it gets to patch it.
+        writer.setparams(params._replace(nframes=0))
+        writer.writeframes(frames)
+    return output.getvalue()
+
+
+async def main(report_directory=None):
     key = os.getenv('OPENAI_API_KEY')
     if not key:
         print('API key is missing. No requests made.')
         return 1
-    root = Path(__file__).resolve().parents[1] / '.runtime'
+    root = Path(report_directory) if report_directory is not None else Path(__file__).resolve().parents[1] / '.runtime'
     root.mkdir(exist_ok=True)
     audio = OpenAIAudio(key)
-    report = {'status': 'running', 'synthetic_input': '준호, 나는 겨울이 더 좋아. 여름은 너무 더워.'}
+    report = {'status': 'running', 'stage': 'speech', 'synthetic_input': '준호, 나는 겨울이 더 좋아. 여름은 너무 더워.'}
     try:
         raw = await audio.speak(report['synthetic_input'], 'a', 'ko', format='wav')
-        # Speech streaming WAVs can use an unknown RIFF length. Finalize the
-        # header for the finite fixture before validating or playing it.
-        with wave.open(io.BytesIO(raw), 'rb') as reader:
-            params = reader.getparams()
-            frames = reader.readframes(reader.getnframes())
-        output = io.BytesIO()
-        with wave.open(output, 'wb') as writer:
-            writer.setparams(params); writer.writeframes(frames)
-        fixture = output.getvalue()
+        report['stage'] = 'normalize_wav'
+        fixture = normalize_wav(raw)
         (root / 'audio-check.wav').write_bytes(fixture)
+        report['stage'] = 'transcription'
         text = await audio.transcribe(fixture, 'ko')
         report.update(status='passed' if '겨울' in text and '준호' in text else 'failed', transcription=text,
                       speech_bytes=len(fixture))
@@ -42,9 +50,10 @@ async def main():
         report.update(status='failed', error_code=error.code)
         print(str(error))
         return 1
-    except Exception:
-        report.update(status='failed', error_code='audio_check_failed')
-        print('Audio check failed. See the local report.')
+    except Exception as error:
+        # Exception messages may contain provider content; only store the type.
+        report.update(status='failed', error_code='audio_check_failed', error_type=type(error).__name__)
+        print(f'Audio check failed at {report["stage"]} ({report["error_type"]}). See the local report.')
         return 1
     finally:
         (root / 'audio-check.json').write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding='utf-8')

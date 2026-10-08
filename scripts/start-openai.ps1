@@ -31,8 +31,13 @@ try {
     $env:TIKITAKA_MODEL = $Model.Trim()
     $env:TIKITAKA_LANGUAGE = $Language
     if ($CheckAudio) {
-        & $venvPython -X utf8 (Join-Path $PSScriptRoot 'check_audio.py')
-        if ($LASTEXITCODE -ne 0) { throw 'Audio API check failed. Server was not started.' }
+        do {
+            & $venvPython -X utf8 (Join-Path $PSScriptRoot 'check_audio.py')
+            if ($LASTEXITCODE -eq 0) { break }
+            Write-Host '검사가 실패했습니다. 키는 이 창의 메모리에만 유지됩니다.'
+            $audioRetry = Read-Host '수정 후 Enter로 재검사 (API 호출), Q로 종료'
+            if ($audioRetry -match '^[qQ]$') { throw 'Audio API check cancelled. Server was not started.' }
+        } while ($true)
     }
     if ($Check -or $CheckAndStart) {
         $reportDirectory = Join-Path $projectRoot '.runtime'
