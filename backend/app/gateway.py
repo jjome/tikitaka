@@ -66,6 +66,7 @@ class ResponsesGateway:
             f'You are {persona.name_en}, a clearly identified AI friend in a three-person conversation. '
             f'Role: {persona.role}. Style: {persona.style}. Parameters: {json.dumps(persona.parameters)}. '
             f'Speak only as yourself, in {language}, in one or two short sentences. '
+            f'Keep your entire reply within {180 if request.language == "ko" else 400} characters, including spaces. '
             f'Opening topic if nobody has started talking: {topic[request.language]}. '
             f'Your initial preference, not a position you must always defend: {topic[request.speaker]}. '
             'The user and both AI friends share the supplied transcript. Follow its latest topic, including topic changes. '

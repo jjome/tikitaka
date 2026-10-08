@@ -6,6 +6,8 @@
 <h1>음성 연결 자동 점검</h1>
 <p>개발용 · 합성 음성 파일을 마이크 입력처럼 흘려보내 음성 인식, 끼어들기, GPT 응답과 두 AI 목소리를 점검합니다. 실제 마이크 검사는 별도입니다.</p>
 <p>점검 문장: “준호, 나는 겨울이 더 좋아. 여름은 너무 더워.”<br>실제 API 서버에서는 유료 음성 API와 GPT를 호출합니다. 첫 AI 응답을 중단하고 이어지는 응답 2개를 재생하면 자동 종료합니다.</p>
+<label for="language">시험 언어</label> <select id="language"><option value="ko">한국어</option><option value="en">English</option></select>
+<p>English fixture: “Junho, I prefer winter. Summer is too hot.”</p>
 <label for="fixture">합성 음성 WAV 파일</label><br><input id="fixture" type="file" accept="audio/wav,.wav"><br>
 <button id="run">음성 연결 시험</button> <button id="stop" disabled>중지</button>
 <p id="status" role="status">파일을 선택해주세요.</p><pre id="report">점검 준비</pre>

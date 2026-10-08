@@ -46,7 +46,8 @@ class OpenAIAudio:
         validate_wav(data)
         response = await self.request('audio/transcriptions',
             files={'file': ('utterance.wav', data, 'audio/wav')},
-            data={'model': self.transcription_model, 'language': language, 'response_format': 'json'})
+            data={'model': self.transcription_model, 'language': language, 'response_format': 'json',
+                  'prompt': '등장인물 이름: 민지, 준호.' if language == 'ko' else 'Names in this conversation: Minji, Junho.'})
         try:
             text = response.json()['text']
             if not isinstance(text, str) or len(text) > 1000:

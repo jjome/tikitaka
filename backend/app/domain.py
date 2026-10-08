@@ -25,7 +25,7 @@ class Message:
 class Policy:
     pacing_seconds: float = 1.5
     generation_timeout: float = 20
-    playback_timeout: float = 30
+    playback_timeout: float = 60
     speech_timeout: float = 6
     heartbeat_timeout: float = 35
     max_calls: int = 60

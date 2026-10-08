@@ -12,10 +12,12 @@
 - [제품 스펙](doc/01_spec.md): 최신 범위, 시나리오, 수용 기준.
 - [설계](doc/02_architecture.md): 음성 상태 머신, 메시지와 이벤트, 모듈 경계.
 - [테스트 계획](doc/03_test_plan.md): PC 자동 검사, 브라우저, Android 실기기 검사.
+- [진행·출시 조건](doc/04_delivery.md): 실제 검사 결과와 남은 출시 조건.
+- [Android 빌드](apps/android/README.md): 네이티브 앱 검사, APK 생성, 휴대폰 연결.
 
 ## 이번 개발 범위
 
-휴대폰 없이 검증할 수 있는 Python 대화 엔진과 로컬 PC 음성 테스트 클라이언트를 구현했다. Android 출시 앱과 PC 테스트 클라이언트는 구분한다. 대본 기반 데모로 동작 검증을 하고, 실제 LLM은 서버 환경변수로 연결한다.
+Python 대화 엔진, PC 음성 클라이언트와 Android 네이티브 클라이언트를 구현했다. 실제 AI 모드는 OpenAI 전사·GPT 응답·음성 생성을 사용한다. Android는 영어로 시작하고 API 키는 서버에만 둔다. PC 검증과 APK 빌드, 실제 휴대폰 검증 및 스토어 출시는 각각 구분한다.
 
 ## PC에서 실행
 
@@ -99,6 +101,7 @@ node tests/live-conversation.mjs --interim-only
 
 ```text
 apps/pc/        PC 음성 테스트 UI와 브라우저 음성 어댑터
+apps/android/   Android 네이티브 앱, Gradle 빌드와 JVM 검사
 backend/app/    대화 엔진, Persona와 Topic, Gateway, API, 저장소
 doc/            현재 스펙, 설계, 테스트 계획
 scripts/        설치, 실행, 테스트 PowerShell 스크립트
@@ -109,9 +112,9 @@ tests/          Python 및 JavaScript 테스트
 ## 개발 제한과 다음 단계
 
 - 마이크 권한, 실제 음성 인식, 스피커 에코와 응답 지연은 사람이 직접 말하며 확인해야 한다.
-- 브라우저 STT와 활동 감지 캡처가 같다는 보장은 없다. 에너지 감지만으로 소음과 말소리를 완전히 구분하지 못한다.
+- 대본 데모에서는 브라우저 STT와 활동 감지 캡처가 같다는 보장이 없다. 실제 API 모드는 같은 PCM 입력을 사용한다. 에너지 감지만으로 소음과 말소리를 완전히 구분하지 못한다.
 - 말해도 마이크 표시가 움직이지 않으면 Chrome에서 페이지를 강력 새로고침(Ctrl+Shift+R)하고 다시 시작한다. 계속 입력이 없으면 `chrome://settings/content/microphone`에서 실제 사용하는 마이크가 선택돼 있는지 확인한다. 브라우저 STT 지원과 실제 마이크 신호 수신은 각각 확인해야 한다.
-- 한국어/영어 캐릭터 음성은 PC에 설치된 TTS 음성에 따른다. 같은 언어 음성이 1개이면 높낮이와 속도로 A/B를 구분한다.
-- SQLite와 단일 서버는 내부 로컬 개발 범위다. 공개 배포 전 인증, HTTPS, STT/TTS Provider, DB와 세션 조정, 보관 정책을 구현한다.
-- 다음 단계는 PC 실음성 검증, Android 오디오 어댑터 및 기기 검증, 영어 UX 검증 순서다.
+- 대본 데모는 PC에 설치된 TTS 음성을 사용한다. 실제 API 모드는 두 친구에 서로 다른 OpenAI 목소리를 사용한다.
+- SQLite와 단일 서버는 내부 로컬 개발 범위다. 공개 배포 전 사용자 접근 제어, HTTPS, 비용 상한, DB와 세션 조정, 보관 정책이 필요하다.
+- 한국어·영어 합성 입력으로 실제 API 전체 경로를 확인했다. Android 실기기의 입력·에코·Bluetooth 및 영어 대화 품질 검증은 별도로 필요하다.
 

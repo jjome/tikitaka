@@ -1,0 +1,45 @@
+plugins { id 'com.android.application' }
+
+def serverUrl = providers.gradleProperty('tikitakaServerUrl').orElse('http://127.0.0.1:8103').get()
+def conversationLanguage = providers.gradleProperty('tikitakaLanguage').orElse('en').get()
+if (!(conversationLanguage in ['en', 'ko'])) throw new GradleException('tikitakaLanguage must be en or ko')
+def serverUri = new URI(serverUrl)
+if (!(serverUri.scheme in ['http', 'https']) || !serverUri.host || serverUri.userInfo ||
+        serverUri.query || serverUri.fragment || !(serverUri.path in ['', '/'])) {
+    throw new GradleException('tikitakaServerUrl must be an HTTP(S) origin without credentials, path or query')
+}
+
+android {
+    namespace 'com.jjome.tikitaka'
+    compileSdk 36
+    defaultConfig {
+        applicationId 'com.jjome.tikitaka'
+        minSdk 26
+        targetSdk 36
+        versionCode 1
+        versionName '0.1.0'
+        buildConfigField 'String', 'SERVER_URL', '"' + serverUrl.replaceAll('/$', '') + '"'
+        buildConfigField 'String', 'CONVERSATION_LANGUAGE', '"' + conversationLanguage + '"'
+    }
+    buildFeatures { buildConfig true }
+    buildTypes {
+        debug { applicationIdSuffix '.dev'; versionNameSuffix '-dev' }
+        release { minifyEnabled false }
+    }
+    compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+}
+
+tasks.configureEach {
+    if (name == 'preReleaseBuild') doFirst {
+        if (serverUri.scheme != 'https' || serverUri.host in ['localhost', '127.0.0.1', '10.0.2.2']) {
+            throw new GradleException('Release requires your HTTPS server: -PtikitakaServerUrl=https://YOUR_HOST')
+        }
+    }
+}
+
+dependencies {
+    implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.robolectric:robolectric:4.14.1'
+    testImplementation 'com.squareup.okhttp3:mockwebserver:4.12.0'
+}

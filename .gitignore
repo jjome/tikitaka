@@ -12,4 +12,9 @@ node_modules/
 *.sqlite3*
 *.log
 .DS_Store
+**/.gradle/
+**/build/
+local.properties
+*.jks
+*.keystore
 

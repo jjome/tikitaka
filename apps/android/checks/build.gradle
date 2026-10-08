@@ -1,0 +1,38 @@
+plugins { id 'java' }
+repositories { google(); mavenCentral() }
+java { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
+sourceSets {
+    main.java.srcDirs = ['../app/src/main/java', layout.buildDirectory.dir('generated/config')]
+    test.java.srcDirs = ['../app/src/test/java']
+}
+dependencies {
+    // AOSP framework classes for compile checks only. Does not package an APK.
+    compileOnly 'org.robolectric:android-all:15-robolectric-12650502'
+    implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.robolectric:robolectric:4.14.1'
+    testImplementation 'com.squareup.okhttp3:mockwebserver:4.12.0'
+    testImplementation 'org.robolectric:android-all:15-robolectric-12650502'
+}
+tasks.register('generateCheckConfig') {
+    def destination = layout.buildDirectory.file('generated/config/com/jjome/tikitaka/BuildConfig.java')
+    outputs.file(destination)
+    doLast {
+        def file = destination.get().asFile; file.parentFile.mkdirs()
+        file.text = 'package com.jjome.tikitaka; public final class BuildConfig { public static final String SERVER_URL="http://127.0.0.1:8103"; public static final String CONVERSATION_LANGUAGE="en"; }'
+    }
+}
+tasks.named('compileJava') { dependsOn 'generateCheckConfig'; options.encoding = 'UTF-8'; options.compilerArgs += ['-Xlint:deprecation'] }
+tasks.named('compileTestJava') { options.encoding = 'UTF-8' }
+test {
+    systemProperty 'robolectric.dependency.repo.url', 'https://repo.maven.apache.org/maven2'
+    testLogging { events 'passed', 'failed', 'skipped' }
+    // The plain Java plugin does not unpack Android library containers as AGP does.
+    doFirst {
+        configurations.testRuntimeClasspath.files.findAll { it.name.endsWith('.aar') }.each { aar ->
+            def destination = layout.buildDirectory.dir('aar/' + aar.name).get().asFile
+            copy { from zipTree(aar); include 'classes.jar'; into destination }
+            classpath += files(new File(destination, 'classes.jar'))
+        }
+    }
+}

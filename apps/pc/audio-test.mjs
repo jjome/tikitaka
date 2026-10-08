@@ -18,9 +18,10 @@ function stop(error = '') {
 run.addEventListener('click', async () => {
   if (!finished) return;
   const fixture = file.files[0];
+  const language = document.getElementById('language').value;
   if (!fixture) { status.textContent = '합성 음성 WAV 파일을 선택해주세요.'; return; }
   finished = false; run.disabled = true; stopButton.disabled = false;
-  report = { status: 'running', source: 'synthetic_audio_file', transcript: '', speakers: [], played: [], interruptions: 0, cancelled_audio_stayed_stopped: false };
+  report = { status: 'running', language, source: 'synthetic_audio_file', transcript: '', speakers: [], played: [], interruptions: 0, cancelled_audio_stayed_stopped: false };
   show(); status.textContent = '음성 시험을 준비하고 있어요';
   timer = setTimeout(() => stop('90초 안에 완료하지 못했습니다.'), 90000);
   try {
@@ -33,7 +34,7 @@ run.addEventListener('click', async () => {
     const destination = inputContext.createMediaStreamDestination();
     inputSource = inputContext.createBufferSource(); inputSource.buffer = decoded; inputSource.connect(destination);
     const response = await fetch('/api/sessions', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ topic_id: 'food', language: 'ko' }) });
+      body: JSON.stringify({ topic_id: 'food', language }) });
     if (!response.ok) throw new Error('테스트 세션을 만들지 못했습니다.');
     session = await response.json();
     if (finished) return;
@@ -73,7 +74,7 @@ run.addEventListener('click', async () => {
             report.played.push(message.speaker); show();
             if (report.speakers.length === 3) {
               const passed = report.speakers.join(',') === 'a,b,a' && report.played.join(',') === 'b,a' &&
-                report.transcript.includes('겨울') && report.interruptions > 0 && report.cancelled_audio_stayed_stopped;
+                report.transcript.toLowerCase().includes(language === 'ko' ? '겨울' : 'winter') && report.interruptions > 0 && report.cancelled_audio_stayed_stopped;
               stop(passed ? '' : '발화 순서 또는 끼어들기 결과를 확인해주세요.');
             } else send({ type: 'playback_finished', message_id: message.id, revision: message.revision });
           }, error => stop(error));
@@ -81,7 +82,7 @@ run.addEventListener('click', async () => {
       };
     });
     heartbeat = setInterval(() => send({ type: 'heartbeat' }), 10000);
-    await voice.start('ko');
+    await voice.start(language);
     if (!finished) send({ type: 'resume' });
   } catch (error) { stop(error.message); }
 });
