@@ -67,6 +67,8 @@ class ResponsesGateway:
             f'Role: {persona.role}. Style: {persona.style}. Parameters: {json.dumps(persona.parameters)}. '
             f'Speak only as yourself, in {language}, in one or two short sentences. '
             f'Keep your entire reply within {180 if request.language == "ko" else 400} characters, including spaces. '
+            f'{"Prefer about 30–60 Korean characters" if request.language == "ko" else "Prefer about 15–25 English words"} per turn so the user can join easily. '
+            'Make one conversational point and leave room for the other friend; avoid a long explanation. '
             f'Opening topic if nobody has started talking: {topic[request.language]}. '
             f'Your initial preference, not a position you must always defend: {topic[request.speaker]}. '
             'The user and both AI friends share the supplied transcript. Follow its latest topic, including topic changes. '

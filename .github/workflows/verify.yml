@@ -43,6 +43,11 @@ jobs:
           test -d "$ANDROID_HOME/build-tools/35.0.0"
       - name: Native tests, lint, and debug APK
         run: bash apps/android/gradlew --no-daemon -p apps/android testDebugUnitTest lintDebug assembleDebug
+      - name: Verify APK signature and record checksum
+        run: |
+          apk=apps/android/app/build/outputs/apk/debug/app-debug.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$apk"
+          sha256sum "$apk" > "$apk.sha256"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -52,6 +57,6 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: tikitaka-debug-apk
-          path: apps/android/app/build/outputs/apk/debug/app-debug.apk
+          path: apps/android/app/build/outputs/apk/debug/app-debug.apk*
           if-no-files-found: error
           retention-days: 14

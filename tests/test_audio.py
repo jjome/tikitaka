@@ -24,7 +24,7 @@ def wav(seconds=.3):
 class FakeAudio:
     def __init__(self): self.inputs = []
     async def transcribe(self, data, language): self.inputs.append((data, language)); return '준호, 겨울이 좋아'
-    async def speak(self, text, speaker, language): self.inputs.append((text, speaker, language)); return b'fake-mp3'
+    async def speak(self, text, speaker, language): self.inputs.append((text, speaker, language)); return wav()
     async def close(self): pass
 
 
@@ -69,7 +69,8 @@ class AudioAPITests(unittest.TestCase):
         route = self.url + '/speech/' + message.id
         self.assertEqual(self.client.post(route).status_code, 404)
         response = self.client.post(route, headers=self.headers)
-        self.assertEqual(response.content, b'fake-mp3')
+        self.assertEqual(response.content, wav())
+        self.assertEqual(response.headers['content-type'], 'audio/wav')
         self.assertEqual(response.headers['cache-control'], 'no-store')
         self.assertEqual(self.audio.inputs, [('반가워요', 'b', 'ko')])
         message.delivery = 'interrupted'
@@ -104,14 +105,27 @@ class AudioGatewayTests(unittest.IsolatedAsyncioTestCase):
         requests = []
         def handler(request):
             requests.append(request)
-            return httpx.Response(200, json={'text': '겨울이 좋아'}) if request.url.path.endswith('transcriptions') else httpx.Response(200, content=b'mp3')
+            return httpx.Response(200, json={'text': '겨울이 좋아'}) if request.url.path.endswith('transcriptions') else httpx.Response(200, content=b'\x00\x00' * 2400)
         client = httpx.AsyncClient(base_url='https://example.test/', transport=httpx.MockTransport(handler))
         audio = OpenAIAudio('not-a-real-key', client)
         self.assertEqual(await audio.transcribe(wav(), 'ko'), '겨울이 좋아')
         self.assertIn(b'utterance.wav', requests[0].content)
         self.assertIn(b'gpt-4o-mini-transcribe', requests[0].content)
-        await audio.speak('hello', 'a', 'en'); await audio.speak('hi', 'b', 'en')
+        speech = await audio.speak('hello', 'a', 'en'); await audio.speak('hi', 'b', 'en')
+        self.assertEqual(json.loads(requests[1].content)['response_format'], 'pcm')
+        with wave.open(io.BytesIO(speech), 'rb') as decoded:
+            self.assertEqual(decoded.getframerate(), 24000)
+            self.assertEqual(decoded.getnframes(), 2400)
+            self.assertEqual(decoded.readframes(2400), b'\x00\x00' * 2400)
         self.assertNotEqual(json.loads(requests[1].content)['voice'], json.loads(requests[2].content)['voice'])
+        await audio.close()
+
+    async def test_misaligned_pcm_output_is_rejected_before_playback(self):
+        client = httpx.AsyncClient(base_url='https://example.test/', transport=httpx.MockTransport(
+            lambda request: httpx.Response(200, content=b'\x00')))
+        audio = OpenAIAudio('not-a-real-key', client)
+        with self.assertRaises(DomainError):
+            await audio.speak('hello', 'a', 'en')
         await audio.close()
 
     async def test_provider_error_does_not_leak_response_or_key(self):

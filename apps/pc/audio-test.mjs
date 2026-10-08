@@ -3,6 +3,7 @@ import { ApiVoice } from './api-voice.mjs';
 const file = document.getElementById('fixture'), run = document.getElementById('run');
 const stopButton = document.getElementById('stop'), status = document.getElementById('status'), reportNode = document.getElementById('report');
 let voice, socket, session, inputContext, inputSource, timer, heartbeat, injectionTimer, finished = true, report;
+let startedAt, inputEndedAt;
 const show = () => { reportNode.textContent = JSON.stringify(report, null, 2); };
 const send = command => { if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(command)); };
 function stop(error = '') {
@@ -11,6 +12,7 @@ function stop(error = '') {
   voice?.stop(); send({ type: 'end' }); socket?.close(); inputContext?.close().catch(() => {});
   run.disabled = false; stopButton.disabled = true;
   report.status = error ? 'failed' : 'passed'; if (error) report.error = error;
+  report.elapsed_ms = Math.round(performance.now() - startedAt);
   status.textContent = error ? `점검 중단: ${error}` : report.provider === 'demo' ?
     '모의 API 통과 · 끼어들기와 준호·민지 재생 완료 (실제 음성 인식·GPT 검증 아님)' :
     '통과 · 음성 인식, 끼어들기, 준호와 민지 응답 및 재생 완료'; show();
@@ -21,6 +23,7 @@ run.addEventListener('click', async () => {
   const language = document.getElementById('language').value;
   if (!fixture) { status.textContent = '합성 음성 WAV 파일을 선택해주세요.'; return; }
   finished = false; run.disabled = true; stopButton.disabled = false;
+  startedAt = performance.now(); inputEndedAt = null;
   report = { status: 'running', language, source: 'synthetic_audio_file', transcript: '', speakers: [], played: [], interruptions: 0, cancelled_audio_stayed_stopped: false };
   show(); status.textContent = '음성 시험을 준비하고 있어요';
   timer = setTimeout(() => stop('90초 안에 완료하지 못했습니다.'), 90000);
@@ -33,6 +36,7 @@ run.addEventListener('click', async () => {
     if (decoded.duration > 15) throw new Error('15초 이하의 점검 파일을 사용해주세요.');
     const destination = inputContext.createMediaStreamDestination();
     inputSource = inputContext.createBufferSource(); inputSource.buffer = decoded; inputSource.connect(destination);
+    inputSource.onended = () => { inputEndedAt = performance.now(); };
     const response = await fetch('/api/sessions', { method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ topic_id: 'food', language }) });
     if (!response.ok) throw new Error('테스트 세션을 만들지 못했습니다.');
@@ -46,12 +50,14 @@ run.addEventListener('click', async () => {
       },
       onActivity: () => send({ type: 'speech_activity' }),
       onText: text => {
+        if (inputEndedAt !== null) report.transcription_after_input_ms = Math.round(performance.now() - inputEndedAt);
         report.transcript = text; show();
         send({ type: 'user_message', text, client_message_id: crypto.randomUUID() });
       },
       onPreview() {}, onLevel() {}, onEmpty: () => stop('점검 음성을 인식하지 못했습니다.'),
       onError: error => stop(error), onStatus: text => { if (!finished) status.textContent = text; },
       onOutputStart: message => {
+        if (report.speakers.length === 2 && inputEndedAt !== null) report.reply_audio_after_input_ms = Math.round(performance.now() - inputEndedAt);
         if (report.speakers.length === 1) {
           injectionTimer = setTimeout(() => { if (!finished) inputSource.start(); }, 300);
         }

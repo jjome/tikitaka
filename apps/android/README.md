@@ -24,14 +24,17 @@ JDK 17 설치 후 프로젝트 루트에서 실행한다.
 
 출력은 `apps/android/app/build/outputs/apk/debug/app-debug.apk`다. 코드의 앱 ID는 `com.jjome.tikitaka.dev`이며 Android 8 이상이 필요하다. 개발 빌드도 기본 대화는 영어다. 한국어 검증은 `-Language ko`로 빌드한다.
 
+GitHub Actions도 SDK가 사전 설치된 환경에서 같은 테스트·lint·APK 빌드를 실행한다. [성공한 빌드](https://github.com/jjome/tikitaka/actions/runs/37840445428)의 `tikitaka-debug-apk` artifact를 받을 수 있다. 이 PC에는 `.runtime/artifacts/33e63d3/app-debug.apk`로 저장했다. CI의 임시 debug 서명은 실행마다 달라질 수 있으므로 다른 빌드로 덮어쓰기가 거부될 수 있다. 기존 앱을 자동 삭제하는 처리는 하지 않는다.
+
 ## 로컬 PC 서버와 연결
 
 PC에서 실제 API 서버 8103을 실행하고 USB 디버깅을 허용한 기기를 연결한다. 기기의 첫 연결 신뢰 확인은 사용자가 직접 처리한다.
 
 ```powershell
-adb reverse tcp:8103 tcp:8103
-adb install -r apps/android/app/build/outputs/apk/debug/app-debug.apk
+.\scripts\install-android.ps1
 ```
+
+도구는 API 서버와 연결된 기기 1대를 확인하고 APK 설치, `adb reverse tcp:8103 tcp:8103`, 앱 열기를 수행한다. 여러 기기가 있으면 `-DeviceSerial`을 지정한다. 직접 받은 파일은 `-ApkPath`로 지정할 수 있다. 이 도구는 PowerShell 구문 검사를 마쳤고 실제 휴대폰 실행은 아직 하지 않았다.
 
 앱은 `http://127.0.0.1:8103`으로 접근한다. 서버는 PC의 loopback에서만 듣고 있으므로 임의로 LAN에 공개할 필요가 없다. 에뮬레이터에서도 `adb reverse`를 사용한다. 시작 버튼을 누르면 OS 마이크 권한을 요청하며 승인 후 대화를 시작한다. 앱을 벗어나거나 오디오 포커스를 잃으면 입력·재생·진행 중 요청을 멈춘다.
 

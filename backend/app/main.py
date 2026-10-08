@@ -224,7 +224,7 @@ def create_app(db_path=None, gateway=None, policy=None, audio_gateway=None):
             data = await connected_audio(request, app.state.audio.speak(message.text, message.speaker, engine.language), engine)
             if message.delivery != 'pending' or engine.state != 'speaking':
                 raise HTTPException(409, '중단된 AI 응답입니다.')
-            return Response(data, media_type='audio/mpeg', headers={'Cache-Control': 'no-store'})
+            return Response(data, media_type='audio/wav', headers={'Cache-Control': 'no-store'})
         except DomainError as exc:
             raise HTTPException(502, str(exc)) from None
         finally:

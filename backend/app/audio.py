@@ -56,14 +56,26 @@ class OpenAIAudio:
         except (KeyError, TypeError, ValueError):
             raise DomainError('invalid_transcription', '인식한 문장을 확인하지 못했습니다. 짧게 다시 말씀해주세요.') from None
 
-    async def speak(self, text, speaker, language, format='mp3'):
+    async def speak(self, text, speaker, language, format='wav'):
+        # PCM avoids MP3 encoding latency. Build a finite WAV header locally so
+        # browser and Android decoders never receive streaming length sentinels.
         response = await self.request('audio/speech', json={
             'model': self.speech_model, 'input': text, 'voice': 'coral' if speaker == 'a' else 'ash',
-            'response_format': format,
+            'response_format': 'pcm' if format == 'wav' else format,
             'instructions': f'Speak naturally as a friendly conversational partner in {"Korean" if language == "ko" else "English"}.',
         })
-        if not response.content or len(response.content) > 3_000_000:
+        if not response.content or len(response.content) > 3_000_000 - (44 if format == 'wav' else 0):
             raise DomainError('invalid_speech', 'AI 음성을 생성하지 못했습니다.')
+        if format == 'wav':
+            if len(response.content) % 2:
+                raise DomainError('invalid_speech', 'AI 음성을 생성하지 못했습니다.')
+            output = io.BytesIO()
+            with wave.open(output, 'wb') as audio:
+                audio.setnchannels(1)
+                audio.setsampwidth(2)
+                audio.setframerate(24000)
+                audio.writeframes(response.content)
+            return output.getvalue()
         return response.content
 
     async def close(self):

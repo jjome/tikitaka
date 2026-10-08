@@ -126,7 +126,7 @@ final class NativeAudio implements VoiceIO {
         cancelPlayback();
         int epoch = playbackGeneration;
         try {
-            playbackFile = File.createTempFile("ai-speech-", ".mp3", context.getCacheDir());
+            playbackFile = File.createTempFile("ai-speech-", ".wav", context.getCacheDir());
             try (FileOutputStream output = new FileOutputStream(playbackFile)) { output.write(bytes); }
             MediaPlayer media = new MediaPlayer(); player = media;
             media.setAudioAttributes(attributes); media.setDataSource(playbackFile.getAbsolutePath());
