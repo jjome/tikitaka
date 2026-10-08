@@ -24,7 +24,7 @@ JDK 17 설치 후 프로젝트 루트에서 실행한다.
 
 출력은 `apps/android/app/build/outputs/apk/debug/app-debug.apk`다. 코드의 앱 ID는 `com.jjome.tikitaka.dev`이며 Android 8 이상이 필요하다. 개발 빌드도 기본 대화는 영어다. 한국어 검증은 `-Language ko`로 빌드한다.
 
-GitHub Actions도 SDK가 사전 설치된 환경에서 같은 테스트·lint·APK 빌드를 실행한다. [성공한 빌드](https://github.com/jjome/tikitaka/actions/runs/37840445428)의 `tikitaka-debug-apk` artifact를 받을 수 있다. 이 PC에는 `.runtime/artifacts/33e63d3/app-debug.apk`로 저장했다. CI의 임시 debug 서명은 실행마다 달라질 수 있으므로 다른 빌드로 덮어쓰기가 거부될 수 있다. 기존 앱을 자동 삭제하는 처리는 하지 않는다.
+GitHub Actions도 SDK가 사전 설치된 환경에서 같은 테스트·lint·APK 빌드와 APK 서명 검사를 실행한다. [성공한 빌드](https://github.com/jjome/tikitaka/actions/runs/37841250993)의 `tikitaka-debug-apk` artifact를 받을 수 있다. 이 PC에는 `.runtime/artifacts/52e317f/app-debug.apk`로 저장했으며 함께 받은 SHA-256과 일치한다. CI의 임시 debug 서명은 실행마다 달라질 수 있으므로 다른 빌드로 덮어쓰기가 거부될 수 있다. 기존 앱을 자동 삭제하는 처리는 하지 않는다.
 
 ## 로컬 PC 서버와 연결
 

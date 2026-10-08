@@ -127,7 +127,7 @@ Android 네이티브 앱의 JVM 테스트와 GitHub Actions APK 빌드를 먼저
 - 8103 서버에서 실제 OpenAI 합성·전사가 통과했고 서버가 `mode=openai`, `voice_transport=api`로 실행됐다. Codex 내장 브라우저에서 한국어와 영어 합성 WAV를 각각 입력해 실제 AudioWorklet→전사→GPT→TTS→재생을 시험했다.
 - 두 언어 모두 첫 민지 음성 중 끼어들기 1회, 사용자 문장 확정, 준호·민지 응답 재생 순서로 통과했다. 중단된 음성의 늦은 완료가 다음 턴을 열지 않았다. 이 시험에서 사람의 마이크는 사용하지 않았다.
 - Android Java 소스를 컴파일하고 Robolectric 및 실제 로컬 모의 HTTP/WebSocket으로 12개 검사를 통과했다. 단일 버튼, 권한 거부·승인 시점, 중단된 음성 콜백, 취소한 다운로드, 연결 해제와 마이크 해제를 포함한다.
-- Python 55개, JavaScript 45개 검사 통과. 세션 만료·즉시 삭제, 삭제 중 진행하던 음성 API 취소, 기존 DB 마이그레이션과 컨트롤러 정리를 포함한다.
-- GitHub Actions에 사전 설치된 SDK로 APK 컴파일·테스트·lint를 실행한다. 첫 실행에서 네트워크 보안 XML의 `includeSubdomains` 누락을 발견해 수정했다. 최종 빌드 결과와 설치 파일은 [진행 기록](04_delivery.md)에 기록한다.
+- Python 56개, JavaScript 45개 검사 통과. 세션 만료·즉시 삭제, 삭제 중 진행하던 음성 API 취소, 기존 DB 마이그레이션과 컨트롤러 정리, PCM 정렬·WAV 헤더를 포함한다.
+- GitHub Actions에 사전 설치된 SDK로 APK 컴파일·테스트·lint·서명 검사를 통과했다. 첫 실행에서 네트워크 보안 XML의 `includeSubdomains` 누락을 발견해 수정했다. 최종 빌드 결과와 설치 파일은 [진행 기록](04_delivery.md)에 기록했다.
 - 실기기에서 스피커 에코, 유선·Bluetooth 라우팅, 전화 수신, 실제 발화 지연을 확인해야 한다. Realtime 스트리밍, 운영 서버 접근 제어·HTTPS 배포, 스토어 출시 완료를 뜻하지 않는다.
 
