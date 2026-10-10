@@ -18,6 +18,7 @@ from .engine import ConversationEngine
 from .gateway import configured_gateway
 from .repository import SessionRepository
 from .audio import OpenAIAudio, MAX_AUDIO_BYTES, validate_wav
+from .local_credentials import persist_requested_key
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -68,6 +69,7 @@ def create_app(db_path=None, gateway=None, policy=None, audio_gateway=None):
 
     @asynccontextmanager
     async def lifespan(app):
+        await asyncio.to_thread(persist_requested_key, ROOT)
         app.state.repository = SessionRepository(db_path or os.getenv('TIKITAKA_DB', str(ROOT / '.runtime/sessions.sqlite3')))
         app.state.gateway = gateway or configured_gateway()
         app.state.audio = audio_gateway or (OpenAIAudio(os.getenv('OPENAI_API_KEY'))

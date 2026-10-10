@@ -48,7 +48,9 @@ Chrome에서 입력이 없다면 주소창에 `http://127.0.0.1:8100/mic`을 입
 
 기본 `demo`는 **고정 대본**이며 유료 LLM을 호출하지 않는다. 실제 AI 대화에는 사용자의 API 키와 사용 가능한 모델 이름이 필요하다. 키는 현재 PowerShell 세션의 `OPENAI_API_KEY` 환경변수에 설정하고, 모델을 명시적으로 지정한다. `.env`는 자동으로 읽지 않는다.
 
-API 키가 없다면 [OpenAI API 키 관리](https://platform.openai.com/api-keys)에서 개발용 키를 발급한다. 키를 채팅이나 코드에 붙여넣는 대신 아래 실행 도구의 비표시 입력란에 넣는다. 도구는 파일에 저장하지 않고 실행하는 서버 프로세스에 전달하며, 종료 시 이전 환경변수로 복원한다. 모델 ID는 계정에서 사용할 수 있는 이름을 지정한다.
+API 키가 없다면 [OpenAI API 키 관리](https://platform.openai.com/api-keys)에서 개발용 키를 발급한다. 키를 채팅이나 코드에 붙여넣는 대신 아래 실행 도구의 비표시 입력란에 한 번 넣는다. 사용자 요청에 따라 Windows DPAPI로 암호화해 `.runtime/credentials/openai-key.dpapi`에 저장하고 다음 실행부터 자동으로 읽는다. 폴더 접근은 현재 Windows 계정과 SYSTEM으로 제한하며 Git에서 제외한다. 평문 키는 서버 프로세스에만 전달하고 종료 시 이전 환경변수를 복원한다. 모델 ID는 계정에서 사용할 수 있는 이름을 지정한다.
+
+키를 교체하려면 같은 실행 명령에 `-ReplaceKey`를 추가한다. 다른 Windows 계정으로 실행하거나 암호화 파일이 손상되면 자동으로 재입력을 반복하지 않고 교체 안내를 표시한다. 암호화 파일을 다른 PC에 복사하는 방식을 키 이전 절차로 사용하지 않는다.
 
 ```powershell
 .\scripts\start-openai.ps1 -Model "YOUR_AVAILABLE_MODEL" -Check
@@ -58,7 +60,7 @@ API 키가 없다면 [OpenAI API 키 관리](https://platform.openai.com/api-key
 
 `-Check`는 실제 API에 최대 3회 요청해 민지 → 준호 → 민지 응답을 출력한다. 인사·감정에 맞게 응답하는지, 대화 주제가 바뀌어도 따라오는지, 앞서 말한 이름을 기억하는지 사람이 확인한다. 이 검사는 유료 호출이며 음성 품질 검사는 아니다. 실패 시 대본 데모로 대체하지 않는다. 두 번째 명령은 실제 AI 모드 서버를 실행한다. 실행 중인 데모 서버와 포트를 분리했으므로 Chrome에서 `http://127.0.0.1:8101/`을 열어야 한다.
 
-`-CheckAndStart`는 키를 한 번 입력하면 검사 후 같은 키로 서버를 시작한다. 검사 결과는 Git에서 제외한 `.runtime/api-check.out.log`와 UTF-8 `.runtime/api-check.json`에 저장하고 키는 기록하지 않는다. JSON 결과는 Windows PowerShell 콘솔 인코딩과 관계없이 한국어를 보존한다. PowerShell 창을 닫으면 이 서버도 종료되므로 시험하는 동안 창을 유지한다.
+`-CheckAndStart`는 저장된 키 또는 처음 입력한 키로 검사 후 서버를 시작한다. 검사 결과는 Git에서 제외한 `.runtime/api-check.out.log`와 UTF-8 `.runtime/api-check.json`에 저장하고 키는 기록하지 않는다. JSON 결과는 Windows PowerShell 콘솔 인코딩과 관계없이 한국어를 보존한다. PowerShell 창을 닫으면 서버는 종료되지만 암호화 저장된 키는 유지되므로 다음 실행에 재입력하지 않는다.
 
 ```powershell
 .\scripts\start.ps1 -Provider openai -Model "YOUR_AVAILABLE_MODEL" -Language en -Port 8101

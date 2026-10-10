@@ -5,10 +5,12 @@
     [switch]$Check,
     [switch]$CheckAndStart,
     [switch]$CheckAudio,
-    [switch]$Reload
+    [switch]$Reload,
+    [switch]$ReplaceKey
 )
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
+. (Join-Path $PSScriptRoot 'windows-key-store.ps1')
 $venvPython = Join-Path $projectRoot '.venv\Scripts\python.exe'
 if (-not (Test-Path -LiteralPath $venvPython)) { throw 'Run .\scripts\setup.ps1 first.' }
 if (-not $Model) { $Model = $env:TIKITAKA_MODEL }
@@ -21,11 +23,9 @@ $previousLanguage = $env:TIKITAKA_LANGUAGE
 $keyPointer = [IntPtr]::Zero
 $secureKey = $null
 try {
-    if (-not $env:OPENAI_API_KEY) {
-        $secureKey = Read-Host 'OpenAI API 키 (화면에 표시하거나 파일에 저장하지 않습니다)' -AsSecureString
-        $keyPointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secureKey)
-        $env:OPENAI_API_KEY = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($keyPointer)
-    }
+    $secureKey = Resolve-TikitakaApiKey -ReplaceKey:$ReplaceKey
+    $keyPointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secureKey)
+    $env:OPENAI_API_KEY = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($keyPointer)
     if (-not $env:OPENAI_API_KEY.Trim()) { throw 'API 키가 필요합니다.' }
     $env:TIKITAKA_PROVIDER = 'openai'
     $env:TIKITAKA_MODEL = $Model.Trim()
@@ -34,7 +34,7 @@ try {
         do {
             & $venvPython -X utf8 (Join-Path $PSScriptRoot 'check_audio.py')
             if ($LASTEXITCODE -eq 0) { break }
-            Write-Host '검사가 실패했습니다. 키는 이 창의 메모리에만 유지됩니다.'
+            Write-Host '검사가 실패했습니다. 저장된 키는 유지되며 Enter로 재검사할 수 있습니다.'
             $audioRetry = Read-Host '수정 후 Enter로 재검사 (API 호출), Q로 종료'
             if ($audioRetry -match '^[qQ]$') { throw 'Audio API check cancelled. Server was not started.' }
         } while ($true)
