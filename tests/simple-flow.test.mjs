@@ -124,11 +124,38 @@ test('interim words shown on screen are finalized after silence and sent once', 
     const recognizer = f.recognitions[0]; recognizer.finalText = '나는 겨울이 더 좋아';
     const interim = [{ transcript: recognizer.finalText }]; interim.isFinal = false;
     recognizer.onspeechstart(); recognizer.onresult({ results: [interim] }); recognizer.onspeechend();
-    assert.equal(f.node('caption').textContent, '나는 겨울이 더 좋아');
+    assert.equal(f.node('user-text').textContent, '나는 겨울이 더 좋아');
+    assert.equal(f.node('user-caption').hidden, false);
     assert.equal(f.records.filter(r => r.type === 'user_message').length, 0);
     await new Promise(resolve => setTimeout(resolve, 2600));
     assert.equal(recognizer.stopCalls, 1);
     assert.deepEqual(f.records.filter(r => r.type === 'user_message').map(r => r.text), ['나는 겨울이 더 좋아']);
+  } finally { await f.cleanup(); }
+});
+
+test('recognized user words remain readable through both AI replies and clear for a new session', async () => {
+  const f = await fixture(async (url, options) => options.method === 'POST' ? sessionResponse()
+    : { ok: true, json: async () => ({ state: 'ended' }) });
+  try {
+    f.node('talk').click(); await tick(); await tick();
+    f.emit({ type: 'message', message: { speaker: 'user', text: '오늘은 좀 피곤해', client_message_id: 'u1' } });
+    for (const speaker of ['a', 'b']) {
+      f.emit({ type: 'message', message: { speaker, text: '잠깐 쉬어도 좋아.', delivery: 'pending', id: speaker, revision: 1 } });
+      assert.equal(f.node('caption').textContent, '잠깐 쉬어도 좋아.');
+      assert.equal(f.node('user-text').textContent, '오늘은 좀 피곤해');
+      assert.equal(f.node('user-caption').hidden, false);
+    }
+    f.emit({ type: 'snapshot', state: 'listening', messages: [
+      { speaker: 'user', text: '처음 말', client_message_id: 'old' },
+      { speaker: 'user', text: '오늘은 좀 피곤해', client_message_id: 'u1' },
+      { speaker: 'a', text: '쉬어도 좋아' },
+    ] });
+    assert.equal(f.node('user-text').textContent, '오늘은 좀 피곤해');
+    f.node('talk').click(); await tick();
+    assert.equal(f.node('user-text').textContent, '오늘은 좀 피곤해');
+    f.node('talk').click(); await tick(); await tick();
+    assert.equal(f.node('user-caption').hidden, true);
+    assert.equal(f.node('user-text').textContent, '');
   } finally { await f.cleanup(); }
 });
 

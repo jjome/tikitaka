@@ -40,10 +40,11 @@ function fixture() {
   const stream = { getTracks: () => [track], getAudioTracks: () => [track] };
   const link = () => ({ connect() {}, disconnect() {} });
   class Context {
-    constructor() { this.sampleRate = 48000; this.state = 'running'; this.audioWorklet = { async addModule() {} }; }
+    constructor() { this.sampleRate = 48000; this.currentTime = 0; this.state = 'running'; this.audioWorklet = { async addModule() {} }; }
     async resume() {} async close() {} async decodeAudioData() { return {}; }
     createMediaStreamSource() { return link(); }
     createGain() { return { ...link(), gain: { value: 0 } }; }
+    createBuffer(channels, length, rate) { const samples = new Float32Array(length); return { duration: length / rate, getChannelData: () => samples }; }
     createBufferSource() { const output = { ...link(), start() { events.push('play'); }, stop() { events.push('stop'); } }; outputs.push(output); return output; }
   }
   class Worklet { constructor() { node = this; this.port = { close() {} }; } connect() {} disconnect() {} }
@@ -83,6 +84,36 @@ test('without SpeechRecognition, PCM speech interrupts actual playback then comm
     assert.equal(f.requests.at(-1).options.headers['X-Session-Token'], 'session-token');
     assert.deepEqual(f.errors, []);
     f.voice.stop(); assert.equal(f.stopped(), 1);
+  } finally { f.cleanup(); }
+});
+
+test('streaming API plays before download completion, and interruption cancels queued audio and read', async () => {
+  const f = fixture(); let controller, finished = 0;
+  const body = new ReadableStream({ start(c) { controller = c; c.enqueue(new Uint8Array(4800)); } });
+  globalThis.fetch = async () => ({ ok: true, headers: new Headers({ 'Content-Type': 'audio/pcm' }), body });
+  try {
+    await f.voice.start('ko');
+    const pending = f.voice.play({ id: 'a1' }, () => finished++, error => f.errors.push(error));
+    await tick();
+    assert.equal(f.outputs.length, 1); // EOF has not arrived yet.
+    f.frames(.02, 12);
+    assert.equal(f.voice.pcm, null);
+    assert.ok(f.events.includes('stop'));
+    controller.enqueue(new Uint8Array(4800)); controller.close(); await pending;
+    assert.equal(f.outputs.length, 1); assert.equal(finished, 0); assert.deepEqual(f.errors, []);
+  } finally { f.cleanup(); }
+});
+
+test('failed partial audio stops scheduled speech and cannot report successful playback', async () => {
+  const f = fixture(); let controller, finished = 0;
+  const body = new ReadableStream({ start(c) { controller = c; c.enqueue(new Uint8Array(4800)); } });
+  globalThis.fetch = async () => ({ ok: true, headers: new Headers({ 'Content-Type': 'audio/pcm' }), body });
+  try {
+    await f.voice.start('ko');
+    const pending = f.voice.play({ id: 'a1' }, () => finished++, error => f.errors.push(error));
+    await tick(); controller.error(new Error('provider body must not be exposed')); await pending;
+    assert.ok(f.events.includes('stop')); assert.equal(finished, 0);
+    assert.equal(f.errors.length, 1); assert.doesNotMatch(f.errors[0], /provider body/);
   } finally { f.cleanup(); }
 });
 

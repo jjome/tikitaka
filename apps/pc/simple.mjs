@@ -1,7 +1,7 @@
 import { ConversationVoice as BrowserVoice } from './conversation-voice.mjs';
 import { MessageOutbox } from './outbox.mjs';
 
-const nodes = Object.fromEntries(['talk', 'status', 'speaker', 'caption', 'error', 'level', 'build', 'friend-a', 'friend-b']
+const nodes = Object.fromEntries(['talk', 'status', 'speaker', 'caption', 'user-caption', 'user-text', 'input-status', 'error', 'level', 'build', 'friend-a', 'friend-b']
   .map(id => [id, document.getElementById(id)]));
 const cacheKey = 'tikitaka_simple_session';
 let config, session, outbox, socket, heartbeat, startup;
@@ -21,9 +21,19 @@ function highlight(speaker) {
   nodes['friend-b'].classList.toggle('active', speaker === 'b');
 }
 function caption(message) {
-  nodes.speaker.textContent = message.speaker === 'user' ? '나' : message.speaker === 'a' ? '민지 · AI' : '준호 · AI';
+  if (message.speaker === 'user') {
+    nodes['user-caption'].hidden = false;
+    nodes['user-text'].textContent = message.text;
+    nodes['input-status'].textContent = '';
+    return;
+  }
+  nodes.speaker.textContent = message.speaker === 'a' ? '민지 · AI' : '준호 · AI';
   nodes.caption.textContent = message.text;
   highlight(message.speaker);
+}
+function inputStatus(text) {
+  nodes['user-caption'].hidden = false;
+  nodes['input-status'].textContent = text;
 }
 function send(command) {
   if (socket?.readyState !== WebSocket.OPEN) return false;
@@ -35,6 +45,7 @@ function stop(command = 'end') {
   active = false;
   starting = false;
   voice.stop();
+  nodes['input-status'].textContent = '';
   send({ type: command });
   startup?.abort();
   if (wasStarting) { const ws = socket; socket = null; ws?.close(); clearInterval(heartbeat); }
@@ -48,7 +59,7 @@ const voice = new BrowserVoice({
       headers: { 'Content-Type': 'application/json', 'X-Session-Token': session.token },
       body: JSON.stringify(report) }).catch(() => {});
   },
-  onStart: () => { if (active) { state = 'listening'; render(); send({ type: 'speech_started' }); } },
+  onStart: () => { if (active) { state = 'listening'; inputStatus('듣고 있어요…'); render(); send({ type: 'speech_started' }); } },
   onActivity: () => { if (active) send({ type: 'speech_activity' }); },
   onText: text => {
     if (!active || !outbox) return;
@@ -60,10 +71,13 @@ const voice = new BrowserVoice({
     send({ type: 'user_message', text: item.text, client_message_id: item.id });
   },
   onPreview: text => { if (active && text) caption({ speaker: 'user', text }); },
-  onEmpty: () => { if (active) send({ type: 'speech_cancelled' }); },
+  onEmpty: () => { if (active) { inputStatus('말씀을 인식하지 못했어요. 다시 말씀해주세요.'); send({ type: 'speech_cancelled' }); } },
   onError: message => { showError(message); stop('pause'); },
   onLevel: value => { nodes.level.value = value; },
-  onStatus: () => {},
+  onStatus: text => {
+    if (active && text === '말을 인식하고 있어요') inputStatus('말씀을 글로 옮기고 있어요…');
+    if (text === '마이크 꺼짐') nodes['input-status'].textContent = '';
+  },
 });
 
 function updateState(next) {
@@ -94,6 +108,8 @@ async function connect(signal) {
       const data = JSON.parse(event.data);
       if (data.type === 'snapshot') {
         outbox.reconcile(data.messages);
+        const latestUser = data.messages.findLast(message => message.speaker === 'user');
+        if (latestUser) caption(latestUser);
         updateState(data.state);
         settled = true; cleanup(); resolve();
       } else if (data.type === 'state') updateState(data.state);
@@ -140,6 +156,9 @@ async function ensureSession(signal) {
     if (!snapshot || snapshot.state === 'ended' || Date.now() / 1000 - snapshot.created_at >= snapshot.policy.max_session_seconds) session = null;
   } else session = null;
   if (!session) {
+    nodes['user-caption'].hidden = true;
+    nodes['user-text'].textContent = '';
+    nodes['input-status'].textContent = '';
     socket?.close(); socket = null; clearInterval(heartbeat);
     const response = await fetch('/api/sessions', { signal, method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ language: config.default_language, topic_id: 'auto' }) });

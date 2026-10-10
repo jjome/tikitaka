@@ -9,7 +9,7 @@ from typing import Literal
 
 from fastapi import FastAPI, HTTPException, Header, WebSocket, WebSocketDisconnect, Request
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field, ConfigDict
 
 from .content import TOPICS, PERSONAS
@@ -174,16 +174,18 @@ def create_app(db_path=None, gateway=None, policy=None, audio_gateway=None):
             raise HTTPException(429, '음성 요청 상한에 도달했습니다. 새 대화를 시작해주세요.')
         return engine
 
-    async def connected_audio(request, operation, engine):
+    async def connected_audio(request, operation, engine, message=None):
         task = asyncio.create_task(operation)
         try:
             while True:
                 done, _ = await asyncio.wait({task}, timeout=.2)
                 if engine.state in {'paused', 'ended'}:
                     raise HTTPException(409, '대화가 정지되어 있습니다.')
+                if message is not None and (message.delivery != 'pending' or engine.state != 'speaking'):
+                    raise HTTPException(409, '중단된 AI 응답입니다.')
                 if done:
                     return await task
-                if await request.is_disconnected():
+                if request is not None and await request.is_disconnected():
                     raise HTTPException(499, '음성 요청이 취소되었습니다.')
         finally:
             if not task.done():
@@ -220,9 +222,31 @@ def create_app(db_path=None, gateway=None, policy=None, audio_gateway=None):
         if not message or message.speaker not in {'a', 'b'} or message.delivery != 'pending':
             raise HTTPException(409, '재생할 AI 응답이 없습니다.')
         audio_busy.add((session_id, 'speech_calls'))
+        stream = None
+        streaming = False
         try:
             engine.stats['speech_calls'] = engine.stats.get('speech_calls', 0) + 1
             engine._save()
+            if request.headers.get('accept') == 'audio/pcm':
+                stream = app.state.audio.stream_speech(message.text, message.speaker, engine.language)
+                first = await connected_audio(request, anext(stream), engine, message)
+
+                async def chunks():
+                    try:
+                        yield first
+                        while True:
+                            try:
+                                # StreamingResponse owns disconnect detection after headers.
+                                yield await connected_audio(None, anext(stream), engine, message)
+                            except StopAsyncIteration:
+                                return
+                    finally:
+                        await stream.aclose()
+                        audio_busy.discard((session_id, 'speech_calls'))
+
+                streaming = True
+                return StreamingResponse(chunks(), media_type='audio/pcm',
+                    headers={'Cache-Control': 'no-store', 'X-Accel-Buffering': 'no'})
             data = await connected_audio(request, app.state.audio.speak(message.text, message.speaker, engine.language), engine)
             if message.delivery != 'pending' or engine.state != 'speaking':
                 raise HTTPException(409, '중단된 AI 응답입니다.')
@@ -230,7 +254,10 @@ def create_app(db_path=None, gateway=None, policy=None, audio_gateway=None):
         except DomainError as exc:
             raise HTTPException(502, str(exc)) from None
         finally:
-            audio_busy.discard((session_id, 'speech_calls'))
+            if not streaming:
+                if stream is not None:
+                    await stream.aclose()
+                audio_busy.discard((session_id, 'speech_calls'))
 
     @app.websocket('/api/sessions/{session_id}/events')
     async def session_events(ws: WebSocket, session_id: str):

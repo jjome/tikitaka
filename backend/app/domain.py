@@ -23,7 +23,7 @@ class Message:
 
 @dataclass(frozen=True)
 class Policy:
-    pacing_seconds: float = 1.5
+    pacing_seconds: float = .7
     generation_timeout: float = 20
     playback_timeout: float = 60
     speech_timeout: float = 6

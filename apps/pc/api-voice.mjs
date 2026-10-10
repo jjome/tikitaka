@@ -1,5 +1,6 @@
 import { acquireMicrophone } from './microphone.mjs';
 import { AudioTurns } from './audio-turns.mjs';
+import { PcmPlayer } from './pcm-player.mjs';
 
 export class ApiVoice {
   constructor(callbacks) {
@@ -54,10 +55,10 @@ export class ApiVoice {
       if (alive()) { this.stop(); throw new Error(error.name === 'NotAllowedError' ? '마이크 권한을 허용해주세요.' : error.message); }
     } finally { if (alive()) { this.starting = false; this.cancelStart = null; } }
   }
-  async request(path, { body, signal, type } = {}) {
+  async request(path, { body, signal, type, accept } = {}) {
     const response = await fetch(`/api/sessions/${encodeURIComponent(this.session.id)}/${path}`, {
       method: 'POST', signal, body,
-      headers: { 'X-Session-Token': this.session.token, ...(type ? { 'Content-Type': type } : {}) },
+      headers: { 'X-Session-Token': this.session.token, ...(type ? { 'Content-Type': type } : {}), ...(accept ? { Accept: accept } : {}) },
     });
     if (!response.ok) {
       let message = '음성 연결에 실패했습니다. 다시 시작해주세요.';
@@ -104,7 +105,25 @@ export class ApiVoice {
     this.player.current = message; const controller = new AbortController(); this.speechRequest = controller;
     const timeout = setTimeout(() => controller.abort(), 25000);
     try {
-      const response = await this.request(`speech/${encodeURIComponent(message.id)}`, { signal: controller.signal });
+      const response = await this.request(`speech/${encodeURIComponent(message.id)}`, { signal: controller.signal, accept: 'audio/pcm' });
+      if (!alive()) return;
+      if (response.headers?.get('content-type')?.startsWith('audio/pcm')) {
+        const pcm = new PcmPlayer(this.context, {
+          onStart: () => { if (alive()) this.onOutputStart(message); },
+          onFinish: () => { if (alive()) { this.player.current = null; this.pcm = null; onFinish(message); } },
+        });
+        this.pcm = pcm;
+        const reader = response.body.getReader();
+        try {
+          while (alive()) {
+            const { value, done } = await reader.read();
+            if (!alive()) return;
+            if (done) { pcm.end(); break; }
+            pcm.push(value);
+          }
+        } finally { await reader.cancel().catch(() => {}); reader.releaseLock(); }
+        return;
+      }
       const bytes = await response.arrayBuffer();
       if (!alive()) return;
       const audio = await this.context.decodeAudioData(bytes);
@@ -115,10 +134,11 @@ export class ApiVoice {
       source.start();
       this.onOutputStart(message);
     } catch (error) {
-      if (alive()) { this.player.current = null; onError(error.message); }
+      if (alive()) { this.cancelPlayback(); onError('AI 음성을 재생하지 못했습니다. 다시 시작해주세요.'); }
     } finally { clearTimeout(timeout); }
   }
   cancelPlayback() {
+    this.pcm?.cancel(); this.pcm = null;
     this.playback++; this.player.current = null; this.speechRequest?.abort(); this.speechRequest = null;
     if (this.playingSource) { this.playingSource.onended = null; try { this.playingSource.stop(); } catch {} this.playingSource.disconnect(); }
     this.playingSource = null;

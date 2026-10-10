@@ -25,6 +25,10 @@ class FakeAudio:
     def __init__(self): self.inputs = []
     async def transcribe(self, data, language): self.inputs.append((data, language)); return '준호, 겨울이 좋아'
     async def speak(self, text, speaker, language): self.inputs.append((text, speaker, language)); return wav()
+    async def stream_speech(self, text, speaker, language):
+        self.inputs.append((text, speaker, language))
+        yield b'\x01\x00' * 2400
+        yield b'\x02\x00' * 2400
     async def close(self): pass
 
 
@@ -77,8 +81,77 @@ class AudioAPITests(unittest.TestCase):
         self.assertEqual(self.client.post(route, headers=self.headers).status_code, 409)
         self.assertEqual(len(self.audio.inputs), 1)
 
+    def test_pcm_stream_requires_authorization_and_preserves_wav_default(self):
+        message = Message('a', '안녕', 1, 1, delivery='pending')
+        self.engine.messages.append(message); self.engine.state = 'speaking'
+        route = self.url + '/speech/' + message.id
+        self.assertEqual(self.client.post(route, headers={'Accept': 'audio/pcm'}).status_code, 404)
+        response = self.client.post(route, headers={**self.headers, 'Accept': 'audio/pcm'})
+        self.assertEqual(response.headers['content-type'], 'audio/pcm')
+        self.assertEqual(response.content, b'\x01\x00' * 2400 + b'\x02\x00' * 2400)
+        self.assertEqual(self.engine.stats['speech_calls'], 1)
+        # Stream cleanup releases the per-session busy lock.
+        self.assertEqual(self.client.post(route, headers=self.headers).content, wav())
+
 
 class AudioGatewayTests(unittest.IsolatedAsyncioTestCase):
+    async def test_stopping_during_stream_cancels_provider_and_releases_busy_slot(self):
+        started, cancelled = asyncio.Event(), asyncio.Event()
+        class SlowAudio(FakeAudio):
+            async def stream_speech(self, text, speaker, language):
+                try:
+                    yield b'\x00\x00' * 2400
+                    started.set()
+                    await asyncio.Future()
+                finally:
+                    cancelled.set()
+        app = create_app(':memory:', DemoGateway(.001), audio_gateway=SlowAudio())
+        async with app.router.lifespan_context(app):
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test') as client:
+                session = (await client.post('/api/sessions', json={})).json()
+                engine = app.state.engines[session['id']]
+                message = Message('a', 'hello', 1, 1, delivery='pending')
+                engine.messages.append(message); engine.state = 'speaking'
+                route = f'/api/sessions/{session["id"]}/speech/{message.id}'
+                headers = {'X-Session-Token': session['token'], 'Accept': 'audio/pcm'}
+                pending = asyncio.create_task(client.post(route, headers=headers))
+                await asyncio.wait_for(started.wait(), 2)
+                await engine.handle({'type': 'pause'})
+                # An interrupted response must terminate, not return a complete audio body.
+                with self.assertRaises(Exception) as error:
+                    await asyncio.wait_for(pending, 2)
+                self.assertNotIsInstance(error.exception, TimeoutError)
+                self.assertTrue(cancelled.is_set())
+                engine.state = 'speaking'; message.delivery = 'pending'
+                response = await client.post(route, headers={'X-Session-Token': session['token']})
+                self.assertEqual(response.status_code, 200)
+
+    async def test_first_pcm_arrives_before_provider_finishes_and_close_cancels_rest(self):
+        closed = asyncio.Event()
+        class Stream(httpx.AsyncByteStream):
+            async def __aiter__(self):
+                yield b'\x01\x00' * 2400
+                await asyncio.Future()
+            async def aclose(self): closed.set()
+        client = httpx.AsyncClient(base_url='https://example.test/', transport=httpx.MockTransport(
+            lambda request: httpx.Response(200, stream=Stream())))
+        audio = OpenAIAudio('dummy', client)
+        stream = audio.stream_speech('안녕', 'a', 'ko')
+        self.assertEqual(await asyncio.wait_for(anext(stream), 1), b'\x01\x00' * 2400)
+        await stream.aclose()
+        self.assertTrue(closed.is_set())
+        await audio.close()
+
+    async def test_streaming_provider_errors_are_sanitized(self):
+        client = httpx.AsyncClient(base_url='https://example.test/', transport=httpx.MockTransport(
+            lambda request: httpx.Response(401, text='secret-error-body')))
+        audio = OpenAIAudio('dummy', client)
+        with self.assertRaises(DomainError) as error:
+            await anext(audio.stream_speech('hello', 'a', 'en'))
+        self.assertEqual(error.exception.code, 'audio_auth')
+        self.assertNotIn('secret-error-body', str(error.exception))
+        await audio.close()
+
     async def test_deleting_active_session_cancels_pending_audio_provider_request(self):
         started, cancelled = asyncio.Event(), asyncio.Event()
         class SlowAudio(FakeAudio):

@@ -98,11 +98,12 @@ Gateway 입력은 해당 Persona, Topic, 언어, 최근 확정 기록, 목적, �
 
 ## 음성 어댑터
 
-2026-10-08 API 음성 경로:
+2026-10-11 API 음성 경로:
 
 - `/api/config`의 `voice_transport`가 `api`이면 마이크 → AudioWorklet → WAV → 서버 전사 → Responses 대화 생성 → 서버 TTS → AudioContext 재생을 사용한다. 브라우저 SpeechRecognition 연결 실패에 영향을 받지 않는다. Realtime API 구현은 아니다.
 - 서버는 `gpt-4o-mini-transcribe`와 `gpt-4o-mini-tts`를 기본으로 사용한다. 민지와 준호는 각각 coral과 ash 음성을 사용하며 기본 화면에 AI 생성 음성임을 표시한다.
-- AI 음성은 OpenAI의 24kHz PCM을 받아 길이가 확정된 WAV로 제공한다. MP3 압축·디코딩 부담과 길이 미정 WAV 헤더를 피한다. [공식 TTS 안내](https://developers.openai.com/api/docs/guides/text-to-speech)의 낮은 지연용 PCM/WAV 형식을 사용하지만 아직 전체 음성 수신 후 재생하는 방식이다.
+- PC는 `/speech/{message_id}`에 `Accept: audio/pcm`을 보내 OpenAI의 24kHz 16-bit mono PCM을 스트리밍한다. 약 100ms 분량부터 AudioContext로 순서대로 재생하며, 전송 완료와 마지막 소리의 재생 완료를 구분한다. 홀수 바이트 경계는 다음 패킷으로 넘긴다. 끼어들면 예약된 모든 소리와 다운로드를 취소한다. Android와 기존 클라이언트에는 기존처럼 길이가 확정된 WAV를 제공한다. 형식은 [공식 TTS 안내](https://developers.openai.com/api/docs/guides/text-to-speech)를 따른다.
+- 사용자 발화 자막은 AI 자막과 별도로 마지막 문장을 유지하고, 새 대화를 만들 때 지운다. 입력 중에는 듣는 중/전사 중 상태를 표시한다. API 전사는 문장 종료 후 반환하므로 단어별 실시간 자막은 아직 지원하지 않는다. AI 간 발화 완료 후 별도 대기는 0.7초다.
 - 발화 감지는 RMS 0.006과 80ms 지속 입력을 사용한다. 사용자 발화 시작 시 로컬 재생과 진행 중 TTS 요청을 즉시 취소한다. 약 0.3초의 앞부분을 보존하고, 활동 종료 후 약 0.9초에 전사를 요청한다. 긴 발화는 약 20초 단위로 나눠 순차 전사한다.
 - 전사 대기 중에도 발화 활동을 서버에 알려 타임아웃을 방지한다. 취소된 전사·음성이 늦게 도착해도 새 대화에 반영하지 않는다. 에너지 기반 감지는 소음과 말소리를 의미적으로 구분하지 못하며 실물 스피커 에코 시험은 필요하다.
 - 원본 사용자 음성은 서버 메모리에서 처리하고 저장하지 않는다. 세션 토큰 인증, WAV 크기·길이 제한, 세션당 전사·TTS 각 최대 60회 제한을 적용하며 실패한 API 시도도 센다. 키는 서버 프로세스에만 둔다.

@@ -56,14 +56,41 @@ class OpenAIAudio:
         except (KeyError, TypeError, ValueError):
             raise DomainError('invalid_transcription', '인식한 문장을 확인하지 못했습니다. 짧게 다시 말씀해주세요.') from None
 
+    def speech_parameters(self, text, speaker, language, format):
+        return {
+            'model': self.speech_model, 'input': text, 'voice': 'coral' if speaker == 'a' else 'ash',
+            'response_format': format,
+            'instructions': f'Speak naturally as a friendly conversational partner in {"Korean" if language == "ko" else "English"}.',
+        }
+
+    async def stream_speech(self, text, speaker, language):
+        """Yield PCM as it arrives; cancellation closes the provider connection."""
+        total = 0
+        try:
+            async with self.client.stream('POST', 'audio/speech',
+                    json=self.speech_parameters(text, speaker, language, 'pcm')) as response:
+                response.raise_for_status()
+                async for chunk in response.aiter_bytes():
+                    total += len(chunk)
+                    if total > 3_000_000:
+                        raise DomainError('invalid_speech', 'AI 음성을 생성하지 못했습니다.')
+                    if chunk:
+                        yield chunk
+                if not total or total % 2:
+                    raise DomainError('invalid_speech', 'AI 음성을 생성하지 못했습니다.')
+        except httpx.TimeoutException:
+            raise DomainError('audio_timeout', '음성 처리 응답이 늦습니다. 다시 시작해주세요.') from None
+        except httpx.HTTPStatusError as exc:
+            code = 'audio_auth' if exc.response.status_code in (401, 403) else 'audio_unavailable'
+            raise DomainError(code, '음성 API 연결과 사용 한도를 확인해주세요.') from None
+        except httpx.RequestError:
+            raise DomainError('audio_unavailable', '음성 API에 연결하지 못했습니다.') from None
+
     async def speak(self, text, speaker, language, format='wav'):
         # PCM avoids MP3 encoding latency. Build a finite WAV header locally so
         # browser and Android decoders never receive streaming length sentinels.
-        response = await self.request('audio/speech', json={
-            'model': self.speech_model, 'input': text, 'voice': 'coral' if speaker == 'a' else 'ash',
-            'response_format': 'pcm' if format == 'wav' else format,
-            'instructions': f'Speak naturally as a friendly conversational partner in {"Korean" if language == "ko" else "English"}.',
-        })
+        response = await self.request('audio/speech', json=self.speech_parameters(
+            text, speaker, language, 'pcm' if format == 'wav' else format))
         if not response.content or len(response.content) > 3_000_000 - (44 if format == 'wav' else 0):
             raise DomainError('invalid_speech', 'AI 음성을 생성하지 못했습니다.')
         if format == 'wav':

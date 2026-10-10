@@ -10,7 +10,7 @@ export async function fixture(createSession, { waitForRecognition = false, micro
       classList: { toggle() {} }, addEventListener(type, handler) { this[type] = handler; } });
     return nodes.get(id);
   }
-  const records = [], voices = [], recognitions = [], sinks = [], reports = [], constraints = [], storage = new Map(), page = {};
+  const records = [], voices = [], recognitions = [], sinks = [], reports = [], constraints = [], sockets = [], storage = new Map(), page = {};
   let streamsStopped = 0;
   let microphoneLevel = 0, cancelled = 0;
   const track = { label: 'Test microphone', enabled: true, muted: false, kind: 'audio', readyState: 'live', stop() { streamsStopped++; } };
@@ -48,7 +48,7 @@ export async function fixture(createSession, { waitForRecognition = false, micro
       : createSession(url, options),
     WebSocket: class {
       static OPEN = 1;
-      constructor() { this.readyState = 0; queueMicrotask(() => { if (this.readyState !== 3) { this.readyState = 1; this.onopen?.(); } }); }
+      constructor() { sockets.push(this); this.readyState = 0; queueMicrotask(() => { if (this.readyState !== 3) { this.readyState = 1; this.onopen?.(); } }); }
       send(raw) {
         const data = JSON.parse(raw); records.push(data);
         const emit = event => queueMicrotask(() => { if (this.readyState === 1) this.onmessage?.({ data: JSON.stringify(event) }); });
@@ -74,6 +74,7 @@ export async function fixture(createSession, { waitForRecognition = false, micro
   await import(`../../apps/pc/simple.mjs?fixture=${++fixtureId}`);
   await tick();
   return { node, records, voices, recognitions, sinks, reports, constraints, track, stopped: () => streamsStopped,
+    emit: event => sockets.at(-1).onmessage({ data: JSON.stringify(event) }),
     session: () => JSON.parse(storage.get('tikitaka_simple_session')),
     audioLevel: value => { microphoneLevel = value; }, cancelled: () => cancelled,
     async cleanup() {

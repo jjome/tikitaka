@@ -4,6 +4,7 @@ Run with uvicorn tests.audio_fixture_server:app --port 8102. No OpenAI calls.
 The generated input is not speech and does not validate recognition accuracy.
 """
 import io
+import asyncio
 import math
 from pathlib import Path
 import struct
@@ -25,6 +26,10 @@ def waveform(seconds, tone=False):
 class FixtureAudio:
     async def transcribe(self, data, language): return '준호, 나는 겨울이 더 좋아. 여름은 너무 더워.'
     async def speak(self, text, speaker, language): return waveform(2)
+    async def stream_speech(self, text, speaker, language):
+        for _ in range(20):
+            yield b'\x00\x00' * 2400
+            await asyncio.sleep(.05)
     async def close(self): pass
 
 

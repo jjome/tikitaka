@@ -7,7 +7,7 @@
   <link rel="icon" href="/assets/icon.svg" type="image/svg+xml">
   <title>Tikitaka · 대화 시작</title>
   <link rel="stylesheet" href="/assets/simple.css">
-  <script type="module" src="/assets/simple.mjs?v=20261002-endpoint2"></script>
+  <script type="module" src="/assets/simple.mjs?v=20261011-captions"></script>
 </head>
 <body>
   <header><div class="brand"><span class="brandmark">t</span>tikitaka<span class="brand-dot">.</span></div></header>
@@ -19,6 +19,7 @@
       <div class="friend" id="friend-b"><div class="face junho" aria-hidden="true"><i></i><i></i><span></span></div><p>준호 <small>AI</small></p></div>
     </div>
     <div class="caption" aria-live="polite"><span id="speaker"></span><p id="caption">친구들이 먼저 이야기할게요.<br>할 말이 생기면 언제든 끼어들어요.</p></div>
+    <div id="user-caption" class="user-caption" aria-live="polite" hidden><span>나</span><p id="user-text"></p><small id="input-status"></small></div>
     <p id="error" class="error" role="alert" hidden></p>
     <button id="talk" disabled>대화 시작</button>
     <p id="status" class="status" role="status">준비 중…</p>

@@ -7,7 +7,7 @@ if (-not (Test-Path -LiteralPath $venvPython)) { throw 'Run .\scripts\setup.ps1 
 if ($LASTEXITCODE -ne 0) { throw 'Python tests failed.' }
 $bundledNode = Join-Path $env:USERPROFILE '.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe'
 $testNode = if (Test-Path -LiteralPath $bundledNode) { $bundledNode } else { (Get-Command node -ErrorAction Stop).Source }
-& $testNode --test tests/voice-core.test.mjs tests/voice-lifecycle.test.mjs tests/outbox.test.mjs tests/simple-flow.test.mjs tests/microphone.test.mjs tests/api-voice.test.mjs
+& $testNode --test tests/voice-core.test.mjs tests/voice-lifecycle.test.mjs tests/outbox.test.mjs tests/simple-flow.test.mjs tests/microphone.test.mjs tests/api-voice.test.mjs tests/pcm-player.test.mjs
 if ($LASTEXITCODE -ne 0) { throw 'Voice client tests failed.' }
 foreach ($file in @('apps/pc/simple.mjs', 'apps/pc/lab.mjs', 'apps/pc/mic.mjs', 'apps/pc/microphone.mjs', 'apps/pc/voice.mjs', 'apps/pc/voice-core.mjs', 'apps/pc/api-voice.mjs', 'apps/pc/audio-turns.mjs', 'apps/pc/pcm-worklet.mjs', 'apps/pc/conversation-voice.mjs', 'apps/pc/audio-test.mjs', 'apps/pc/outbox.mjs', 'tests/helpers/pc-harness.mjs', 'tests/live-conversation.mjs')) {
     & $testNode --check $file
